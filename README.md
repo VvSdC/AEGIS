@@ -574,6 +574,7 @@ curl -X POST http://localhost:8000/api/v1/risk/score \
 - **API Documentation**: http://aegis-backend-6y5ofugcka-el.a.run.app/docs
 - **ReDoc**: http://aegis-backend-6y5ofugcka-el.a.run.app/redoc
 - **Frontend**: http://aegis-backend-6y5ofugcka-el.a.run.app/
+- **Loom Video**: https://www.loom.com/share/6fa93682de014b66baf4377f1e886ffd
 - **GitHub**: [Repository Link]
 
 ---
