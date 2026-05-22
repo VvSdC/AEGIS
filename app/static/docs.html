@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AEGIS - Architecture & Documentation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.7; }
+.container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+h1 { font-size: 2.2rem; text-align: center; margin-bottom: 0.3rem; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.subtitle { text-align: center; color: #94a3b8; margin-bottom: 2.5rem; font-size: 1rem; }
+h2 { font-size: 1.4rem; color: #f1f5f9; margin: 2.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #334155; }
+h3 { font-size: 1.1rem; color: #93c5fd; margin: 1.5rem 0 0.75rem; }
+p { margin-bottom: 1rem; color: #cbd5e1; }
+ul, ol { margin: 0.5rem 0 1rem 1.5rem; color: #cbd5e1; }
+li { margin-bottom: 0.4rem; }
+code { font-family: 'JetBrains Mono', 'Fira Code', monospace; background: #1e293b; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85rem; color: #93c5fd; }
+pre { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.2rem; overflow-x: auto; margin: 1rem 0; font-size: 0.82rem; line-height: 1.6; }
+pre code { background: none; padding: 0; color: #e2e8f0; }
+.card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; margin: 1rem 0; }
+.card-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+.card-header h3 { margin: 0; }
+.badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.badge-green { background: #065f46; color: #6ee7b7; }
+.badge-yellow { background: #78350f; color: #fbbf24; }
+.badge-red { background: #7f1d1d; color: #fca5a5; }
+.badge-blue { background: #1e3a5f; color: #93c5fd; }
+.badge-purple { background: #3b0764; color: #c4b5fd; }
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; background: #1e293b; border: 1px solid #334155; border-radius: 10px; overflow: hidden; }
+th { background: #0f172a; padding: 0.75rem 1rem; text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 1px solid #334155; }
+td { padding: 0.65rem 1rem; border-bottom: 1px solid #262f3f; font-size: 0.88rem; color: #cbd5e1; }
+tr:last-child td { border-bottom: none; }
+tr:hover { background: #262f3f; }
+.flow-diagram { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.8; overflow-x: auto; white-space: pre; color: #94a3b8; }
+.flow-diagram .highlight { color: #60a5fa; font-weight: 600; }
+.flow-diagram .block { color: #f87171; }
+.flow-diagram .pass { color: #4ade80; }
+.flow-diagram .warn { color: #fbbf24; }
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.stat-box { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1rem; text-align: center; }
+.stat-box .num { font-size: 1.8rem; font-weight: 700; color: #60a5fa; }
+.stat-box .label { font-size: 0.72rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+.endpoint { border-left: 3px solid #3b82f6; padding-left: 1rem; margin: 1rem 0; }
+.endpoint .method { display: inline-block; font-weight: 700; font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; margin-right: 0.5rem; }
+.endpoint .method-post { background: #065f46; color: #6ee7b7; }
+.endpoint .method-get { background: #1e3a5f; color: #93c5fd; }
+.nav { position: sticky; top: 0; background: #0f172a; border-bottom: 1px solid #334155; padding: 0.75rem 1.5rem; z-index: 100; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
+.nav a { color: #94a3b8; text-decoration: none; font-size: 0.82rem; font-weight: 500; transition: color 0.2s; }
+.nav a:hover { color: #60a5fa; }
+.nav .brand { color: #60a5fa; font-weight: 700; font-size: 0.95rem; margin-right: 1rem; }
+footer { text-align: center; margin-top: 3rem; padding: 1.5rem; border-top: 1px solid #334155; color: #475569; font-size: 0.8rem; }
+@media (max-width: 768px) {
+  .container { padding: 1rem; }
+  .nav { gap: 0.75rem; padding: 0.5rem 1rem; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  pre { font-size: 0.72rem; padding: 0.8rem; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <span class="brand">AEGIS</span>
+  <a href="#overview">Overview</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#tier1">Input Tier 1</a>
+  <a href="#output">Output Guardrails</a>
+  <a href="#tier2">Input Tier 2</a>
+  <a href="#latency">Latency</a>
+  <a href="#api">API</a>
+  <a href="#risk">Risk Scoring</a>
+  <a href="/swagger">Swagger UI</a>
+  <a href="/redoc">ReDoc</a>
+</nav>
+
+<div class="container">
+
+<h1>AEGIS Documentation</h1>
+<p class="subtitle">AI Ethics & Governance Intelligence System &mdash; Architecture & API Reference</p>
+
+<div class="stats-row">
+  <div class="stat-box"><div class="num">2+2</div><div class="label">Input/Output Tiers</div></div>
+  <div class="stat-box"><div class="num">&lt;30ms</div><div class="label">Tier 1 Latency</div></div>
+  <div class="stat-box"><div class="num">91</div><div class="label">Prompt Patterns</div></div>
+  <div class="stat-box"><div class="num">160</div><div class="label">Code Patterns</div></div>
+  <div class="stat-box"><div class="num">105</div><div class="label">PII Entities</div></div>
+  <div class="stat-box"><div class="num">5</div><div class="label">Regions</div></div>
+  <div class="stat-box"><div class="num">15</div><div class="label">SAST Categories</div></div>
+</div>
+
+<!-- OVERVIEW -->
+<h2 id="overview">System Overview</h2>
+<p>AEGIS is a real-time AI governance platform that sits between your application and the LLM. It enforces guardrails on both prompts (input) and model responses (output), provides risk scoring, policy enforcement, and maintains tamper-evident audit trails.</p>
+
+<div class="card">
+<div class="card-header"><h3>Core Capabilities</h3></div>
+<ul>
+  <li><strong>Two-Tier Input Guardrails</strong> &mdash; Fast regex/YARA (Tier 1) + LLM-based deep analysis (Tier 2) for prompts</li>
+  <li><strong>Two-Tier Output Guardrails</strong> &mdash; Pattern warnings (Tier 1) + Compliance assessment (Tier 2) for responses</li>
+  <li><strong>PII Detection & Redaction</strong> &mdash; 105 entities across 5 regions with hard/soft block logic</li>
+  <li><strong>Prompt Injection & Jailbreak Detection</strong> &mdash; 91 patterns covering known attack vectors</li>
+  <li><strong>Insecure Code Detection</strong> &mdash; 160 SAST patterns (Bandit, Semgrep, Bearer) across 15 categories</li>
+  <li><strong>Region-Based Governance</strong> &mdash; EU AI Act, NIST RMF, GDPR, DPDPA compliance headers</li>
+  <li><strong>Risk Scoring</strong> &mdash; 0-100 scale across 6 weighted categories</li>
+  <li><strong>Audit Vault</strong> &mdash; Hash-chained immutable logs for every request</li>
+  <li><strong>Red-Team Kit</strong> &mdash; Built-in adversarial testing against your own guardrails</li>
+</ul>
+</div>
+
+<!-- ARCHITECTURE -->
+<h2 id="architecture">Architecture Flow</h2>
+<p>Every request through the <code>/proxy</code> endpoint follows this pipeline:</p>
+
+<div class="flow-diagram"><span class="highlight">CLIENT REQUEST</span>
+       │
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="highlight">TIER 1: Fast Pattern Matching</span>  (&lt;30ms)                 │
+│                                                         │
+│  ┌─────────┐  ┌───────────┐  ┌───────────┐  ┌───────┐ │
+│  │ PII     │→ │ Jailbreak │→ │ Injection │→ │Toxic- │ │
+│  │ Filter  │  │ Detection │  │ Detection │  │icity  │ │
+│  └────┬────┘  └─────┬─────┘  └─────┬─────┘  └───┬───┘ │
+│       │              │              │             │     │
+│  Hard → <span class="block">BLOCK</span>   Match → <span class="block">BLOCK</span>  Match → <span class="block">BLOCK</span>  Hit → <span class="block">BLOCK</span>│
+│  Soft → <span class="warn">REDACT</span>                                         │
+└─────────────────────────────────────────────────────────┘
+       │ (if not blocked)
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="highlight">TIER 2: LLM-Based Analysis</span>  (200ms–2s)                 │
+│                                                         │
+│  Checks: Subtle toxicity, Novel jailbreaks, Bias,      │
+│          Privacy violations, Hallucination risk,        │
+│          Regulatory compliance (GDPR, EU AI Act)        │
+│                                                         │
+│  Returns: findings[] with severity + confidence         │
+│  Decision: should_block (true/false)                    │
+└─────────────────────────────────────────────────────────┘
+       │ (if not blocked)
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="highlight">GEMINI MODEL</span>  (500ms–5s)                              │
+│  Uses filtered/sanitized prompt                         │
+└─────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│  <span class="highlight">OUTPUT GUARDRAILS</span>  (Tier 1: Warn, Tier 2: Assess)      │
+│                                                         │
+│  Tier 1: PII/toxicity/insecure code detection (<span class="warn">WARN</span>)  │
+│  Tier 2: Region compliance + safety assessment          │
+│                                                         │
+│  Output: safe_to_use, action_required, recommendations  │
+└─────────────────────────────────────────────────────────┘
+       │
+       ▼
+<span class="pass">RESPONSE TO CLIENT</span> + Output Assessment + Audit Log</div>
+
+<!-- TIER 1 -->
+<h2 id="tier1">Tier 1: Fast Pattern Matching</h2>
+<p>Tier 1 uses compiled regex patterns and YARA rules for sub-30ms detection. It runs on every request and short-circuits on the first hard block.</p>
+
+<h3>1. PII Detection (Region-Aware)</h3>
+<div class="card">
+<p>Patterns loaded from <code>patterns/pii_patterns.json</code>. Two-pass approach:</p>
+<table>
+<thead><tr><th>Pass</th><th>Block Type</th><th>Action</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-red">Pass 1</span></td><td>Hard Block</td><td>Immediate rejection, no redaction</td><td>SSN, Aadhaar, Credit Cards, Government IDs, API Keys</td></tr>
+<tr><td><span class="badge badge-yellow">Pass 2</span></td><td>Soft Block</td><td>Redact with [REDACTED], allow through</td><td>Phone numbers, Email, IP addresses, DOB</td></tr>
+</tbody>
+</table>
+<p><strong>Region support:</strong> INDIA (DPDPA), USA (CCPA/HIPAA), UK (UK GDPR), EUROPE (GDPR), AUSTRALIA (Privacy Act), GLOBAL (universal patterns). Region-specific patterns run first, then GLOBAL patterns apply to all.</p>
+</div>
+
+<h3>2. Jailbreak Detection</h3>
+<div class="card">
+<p>23 entity groups with 48 compiled regex patterns detecting:</p>
+<ul>
+  <li>Instruction override attempts (<code>ignore all previous instructions</code>)</li>
+  <li>Named personas (DAN, STAN, DUDE, AIM)</li>
+  <li>Role override / evil AI requests</li>
+  <li>Mode switching (developer/debug/god mode)</li>
+  <li>Fictional framing with bypass intent</li>
+  <li>Output prefix forcing (<code>start your response with "Sure"</code>)</li>
+  <li>Continuation tricks and many-shot attacks</li>
+  <li>Social engineering (grandma trick)</li>
+</ul>
+<p>Confidence range: <code>0.75</code> (low, aggregate only) to <code>1.0</code> (DAN/named personas).</p>
+</div>
+
+<h3>3. Injection Detection</h3>
+<div class="card">
+<p>21 entity groups with 43 compiled regex patterns detecting:</p>
+<ul>
+  <li>Fake system/XML/markdown tags (<code>&lt;system&gt;</code>, <code>```system</code>, <code>### SYSTEM</code>)</li>
+  <li>LLM special tokens (<code>&lt;|im_start|&gt;</code>, <code>[INST]</code>, <code>&lt;&lt;SYS&gt;&gt;</code>)</li>
+  <li>Delimiter injection (END OF INSTRUCTIONS, BEGIN NEW PROMPT)</li>
+  <li>Role prefix confusion (<code>Human:</code>, <code>System:</code>)</li>
+  <li>System prompt extraction (repeat/reveal/translate)</li>
+  <li>Encoding obfuscation (base64, unicode escapes, URL encoding)</li>
+  <li>Context window attacks (whitespace padding)</li>
+  <li>Indirect document injection and tool output hijacking</li>
+</ul>
+<p>Confidence range: <code>0.8</code> to <code>1.0</code> (special tokens).</p>
+</div>
+
+<h3>4. Toxicity Blocklist</h3>
+<div class="card">
+<p>Basic keyword-level filter for obvious toxic terms. Confidence: <code>1.0</code>. Nuanced toxicity (coded language, context-dependent) handled by Tier 2.</p>
+</div>
+
+<h3>5. YARA Rules (Optional)</h3>
+<div class="card">
+<p>If <code>yara-python</code> is installed, YARA rules from <code>yara_rules/*.yar</code> add sophisticated multi-condition pattern matching. Confidence: <code>0.95</code>. System works without YARA (graceful fallback).</p>
+</div>
+
+<h3>6. Insecure Code Detection (SAST)</h3>
+<div class="card">
+<p>160 patterns from <code>patterns/code_patterns.json</code> detect insecure code in LLM-generated responses. Based on Bandit, Semgrep, Bearer, and OWASP rules.</p>
+<table>
+<thead><tr><th>Category</th><th>Patterns</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-red">Injection</span></td><td>SQL, Command, LDAP, XPath, Template, NoSQL</td><td><code>cursor.execute(f"SELECT * FROM {user_input}")</code></td></tr>
+<tr><td><span class="badge badge-red">Hardcoded Secrets</span></td><td>API keys, passwords, tokens, private keys</td><td><code>API_KEY = "sk-abc123..."</code></td></tr>
+<tr><td><span class="badge badge-yellow">Insecure Crypto</span></td><td>MD5, SHA1, weak ciphers, bad random</td><td><code>hashlib.md5(password)</code></td></tr>
+<tr><td><span class="badge badge-red">Dangerous Functions</span></td><td>eval, pickle, yaml.load, XXE</td><td><code>pickle.loads(user_data)</code></td></tr>
+<tr><td><span class="badge badge-yellow">Path Traversal</span></td><td>File ops with user input, symlink attacks</td><td><code>open(request.args['file'])</code></td></tr>
+<tr><td><span class="badge badge-yellow">SSRF</span></td><td>HTTP requests with user-controlled URLs</td><td><code>requests.get(user_url)</code></td></tr>
+<tr><td><span class="badge badge-yellow">XSS</span></td><td>innerHTML, dangerouslySetInnerHTML</td><td><code>innerHTML = user_input</code></td></tr>
+</tbody>
+</table>
+<p>Severity mapping: Critical (0.95), High (0.85), Medium (0.70), Low (0.50). Does not block by default — warns only.</p>
+</div>
+
+<!-- OUTPUT GUARDRAILS -->
+<h2 id="output">Output Guardrails</h2>
+<p>Output guardrails assess model responses without blocking. They provide warnings and compliance assessments.</p>
+
+<h3>Output Tier 1: Pattern-Based Warnings</h3>
+<div class="card">
+<p>Runs the same detection as input Tier 1, but returns <strong>warnings only</strong> — no blocking or redaction.</p>
+<ul>
+  <li>PII detection (warns about leaked personal data)</li>
+  <li>Toxicity detection (flags potentially harmful content)</li>
+  <li>Insecure code detection (warns about vulnerable code patterns)</li>
+</ul>
+<pre><code>{
+  "tier1": {
+    "findings": [
+      {"category": "pii", "severity": "warning", "description": "Email address detected"},
+      {"category": "insecure_code", "severity": "critical", "description": "SQL injection pattern"}
+    ],
+    "has_warnings": true,
+    "warning_summary": "Found 1 warning, 1 critical in categories: pii, insecure_code"
+  }
+}</code></pre>
+</div>
+
+<h3>Output Tier 2: Compliance Assessment</h3>
+<div class="card">
+<p>LLM-based assessment of whether the response complies with regional regulations. Returns a safety score and recommendations.</p>
+<table>
+<thead><tr><th>Region</th><th>Regulations Checked</th></tr></thead>
+<tbody>
+<tr><td>India</td><td>DPDPA 2023, IT Act 2000, NITI Aayog Principles, RBI Norms</td></tr>
+<tr><td>Europe</td><td>EU AI Act 2024, GDPR, Digital Services Act, ePrivacy Directive</td></tr>
+<tr><td>USA</td><td>NIST AI RMF, Executive Order on AI, CCPA/CPRA, FTC Guidelines</td></tr>
+<tr><td>Australia</td><td>Privacy Act 1988, AI Ethics Framework, Online Safety Act</td></tr>
+<tr><td>China</td><td>PIPL, Cybersecurity Law, Generative AI Measures 2023</td></tr>
+</tbody>
+</table>
+<pre><code>{
+  "tier2": {
+    "compliant": true,
+    "safety_score": 0.92,
+    "policies_checked": ["EU AI Act 2024", "GDPR"],
+    "assessment": "Response complies with regional regulations.",
+    "recommendations": []
+  },
+  "safe_to_use": true,
+  "action_required": false,
+  "summary": "Response complies with regional regulations."
+}</code></pre>
+</div>
+
+<!-- TIER 2 -->
+<h2 id="tier2">Tier 2: LLM-Based Deep Analysis (Input)</h2>
+<p>Only runs if Tier 1 does NOT block (saves cost). Uses Gemini to analyze for subtle issues that regex cannot catch.</p>
+
+<div class="card">
+<h3>Analysis Categories</h3>
+<table>
+<thead><tr><th>Category</th><th>What It Detects</th><th>Why Tier 2</th></tr></thead>
+<tbody>
+<tr><td>Subtle Toxicity</td><td>Hate speech, coded language, microaggressions</td><td>Context-dependent, no regex for nuance</td></tr>
+<tr><td>Novel Jailbreaks</td><td>Multi-turn manipulation, unseen variants</td><td>Zero-day attacks not in pattern DB</td></tr>
+<tr><td>Demographic Bias</td><td>Unfair treatment, stereotypes, exclusion</td><td>Requires semantic understanding</td></tr>
+<tr><td>Privacy Violations</td><td>Indirect PII extraction, inference attacks</td><td>Pattern-matching misses indirect leaks</td></tr>
+<tr><td>Hallucination Risk</td><td>Factual inaccuracies, invented citations</td><td>Requires world knowledge</td></tr>
+<tr><td>Prompt Injection</td><td>Sophisticated multi-step bypasses</td><td>Obfuscated beyond regex capability</td></tr>
+<tr><td>Regulatory Compliance</td><td>GDPR, EU AI Act, sector rules</td><td>Requires legal reasoning</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h3>Tier 2 Response Format</h3>
+<pre><code>{
+  "findings": [
+    {
+      "category": "toxicity|jailbreak|bias|privacy|hallucination|injection|compliance",
+      "severity": "low|medium|high|critical",
+      "description": "Brief description of the issue",
+      "confidence": 0.0-1.0
+    }
+  ],
+  "should_block": true|false,
+  "block_reason": "Reason if should_block is true"
+}</code></pre>
+</div>
+
+<!-- LATENCY -->
+<h2 id="latency">Latency Budget</h2>
+
+<table>
+<thead><tr><th>Component</th><th>Min</th><th>Typical</th><th>Max</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>Tier 1 &mdash; Regex</strong></td><td>1ms</td><td>10&ndash;20ms</td><td>30ms</td><td>All regex pre-compiled at init</td></tr>
+<tr><td><strong>Tier 1 &mdash; YARA</strong></td><td>2ms</td><td>5&ndash;10ms</td><td>20ms</td><td>Rules compiled once, cached</td></tr>
+<tr><td><strong>Tier 1 &mdash; PII Redaction</strong></td><td>2ms</td><td>5ms</td><td>15ms</td><td>All occurrences found &amp; replaced</td></tr>
+<tr><td style="color:#60a5fa"><strong>Tier 1 Total</strong></td><td style="color:#60a5fa">5ms</td><td style="color:#60a5fa">15&ndash;25ms</td><td style="color:#60a5fa">30ms</td><td style="color:#60a5fa">Target SLA</td></tr>
+<tr><td><strong>Tier 2 &mdash; LLM</strong></td><td>200ms</td><td>500ms&ndash;1s</td><td>2s</td><td>Network + Gemini inference</td></tr>
+<tr><td><strong>Model Generation</strong></td><td>500ms</td><td>1.5&ndash;3s</td><td>10s</td><td>Depends on prompt/response length</td></tr>
+<tr><td><strong>Output Filter</strong></td><td>2ms</td><td>10&ndash;20ms</td><td>30ms</td><td>Tier 1 only on response</td></tr>
+<tr><td style="color:#a78bfa"><strong>Full Proxy Round-trip</strong></td><td style="color:#a78bfa">700ms</td><td style="color:#a78bfa">2&ndash;4s</td><td style="color:#a78bfa">12s</td><td style="color:#a78bfa">All components combined</td></tr>
+</tbody>
+</table>
+
+<div class="card">
+<h3>Short-Circuit Optimization</h3>
+<p>If Tier 1 detects a hard block, the pipeline exits immediately (&lt;30ms total). Tier 2 and model calls are skipped entirely. This means attack attempts are rejected at wire speed without incurring LLM costs.</p>
+</div>
+
+<!-- CONFIDENCE -->
+<h2 id="confidence">Confidence Scoring</h2>
+
+<table>
+<thead><tr><th>Source</th><th>Category</th><th>Confidence</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>PII (Hard Block)</td><td>pii_hard_block</td><td><code>0.99</code></td><td>High-confidence government ID / card number match</td></tr>
+<tr><td>PII (Soft Block)</td><td>pii_soft_block</td><td><code>0.70</code></td><td>Probable PII, may have edge-case FPs</td></tr>
+<tr><td>Jailbreak (Regex)</td><td>jailbreak</td><td><code>0.75&ndash;1.0</code></td><td>Per-entity confidence based on FP risk</td></tr>
+<tr><td>Jailbreak (YARA)</td><td>jailbreak</td><td><code>0.95</code></td><td>Multi-condition YARA rules, very high precision</td></tr>
+<tr><td>Injection (Regex)</td><td>injection</td><td><code>0.8&ndash;1.0</code></td><td>Per-entity confidence</td></tr>
+<tr><td>Injection (YARA)</td><td>injection</td><td><code>0.95</code></td><td>Multi-condition YARA rules</td></tr>
+<tr><td>Toxicity (Blocklist)</td><td>toxicity</td><td><code>1.0</code></td><td>Exact keyword match</td></tr>
+<tr><td>Tier 2 (LLM)</td><td>any</td><td><code>0.0&ndash;1.0</code></td><td>LLM-assessed, context-dependent</td></tr>
+</tbody>
+</table>
+
+<div class="card">
+<h3>Scoring Strategy (Prompt Patterns)</h3>
+<ul>
+  <li><code>confidence = 1.0</code> &mdash; Hard block candidate alone (DAN, special tokens)</li>
+  <li><code>confidence &ge; 0.85</code> &mdash; Block if single match, flag for secondary scoring</li>
+  <li><code>confidence 0.7&ndash;0.84</code> &mdash; Flag for Tier 2 analysis, aggregate with other signals</li>
+  <li><code>confidence &lt; 0.7</code> &mdash; Soft signal only, log but don't block alone</li>
+</ul>
+</div>
+
+<!-- API -->
+<h2 id="api">API Endpoints</h2>
+
+<h3>Filter &mdash; Text Analysis</h3>
+<div class="endpoint">
+<p><span class="method method-post">POST</span> <code>/api/v1/filter</code></p>
+<p>Run guardrails on arbitrary text. Returns filtered text, match details, and latency breakdown.</p>
+<pre><code>// Request
+{
+  "text": "My SSN is 123-45-6789",
+  "direction": "prompt",
+  "tier": "both",
+  "system_name": "my-app",
+  "region": "US"
+}
+
+// Response
+{
+  "original_text": "My SSN is 123-45-6789",
+  "filtered_text": "My SSN is 123-45-6789",
+  "blocked": true,
+  "block_reason": "Hard-blocked PII: US Social Security Number",
+  "matches": [{
+    "filter_name": "pii_SSN_HARD",
+    "category": "pii_hard_block",
+    "matched_text": "123-45-6789",
+    "confidence": 0.99,
+    "tier": 1
+  }],
+  "tier1_latency_ms": 8.2,
+  "tier2_latency_ms": null,
+  "total_latency_ms": 8.2
+}</code></pre>
+</div>
+
+<h3>Proxy &mdash; Governed Model Access</h3>
+<div class="endpoint">
+<p><span class="method method-post">POST</span> <code>/api/v1/proxy</code></p>
+<p>Drop-in replacement for direct Gemini calls. Applies input guardrails, forwards to model, filters output.</p>
+<pre><code>// Request
+{
+  "prompt": "What is the capital of France?",
+  "system_name": "chatbot",
+  "region": "EU",
+  "guardrail_mode": "rule_based",
+  "model": "gemini-2.5-flash"
+}
+
+// Response
+{
+  "original_prompt": "What is the capital of France?",
+  "filtered_prompt": "What is the capital of France?",
+  "model_response": "The capital of France is Paris.",
+  "filtered_response": "The capital of France is Paris.",
+  "blocked": false,
+  "total_time_ms": 1680,
+  "guardrail_latency_ms": 22,
+  "model_time_ms": 1450
+}</code></pre>
+<p><strong>Guardrail modes:</strong></p>
+<ul>
+  <li><code>"none"</code> &mdash; Pass-through, no guardrails</li>
+  <li><code>"rule_based"</code> &mdash; Tier 1 only (&lt;30ms overhead)</li>
+  <li><code>"model_based"</code> &mdash; Tier 1 + Tier 2 (200ms&ndash;2s overhead)</li>
+</ul>
+</div>
+
+<h3>Analyze &mdash; Interactive Analysis</h3>
+<div class="endpoint">
+<p><span class="method method-post">POST</span> <code>/api/v1/analyze</code></p>
+<p>UI-focused endpoint with structured allow/deny response. Injects regional compliance headers into the governed prompt.</p>
+<pre><code>// Request
+{
+  "prompt": "Explain quantum computing",
+  "region": "india",
+  "guardrail_mode": "advanced",
+  "system_name": "edu-bot"
+}
+
+// Response
+{
+  "allow": true,
+  "response": "Quantum computing uses quantum bits...",
+  "tier1": { "blocked": false, "latency_seconds": 0.012, "matches": [] },
+  "tier2": { "blocked": false, "latency_seconds": 0.8, "policies_applied": ["DPDPA"] },
+  "total_latency_seconds": 3.2
+}</code></pre>
+</div>
+
+<h3>Risk Scoring</h3>
+<div class="endpoint">
+<p><span class="method method-post">POST</span> <code>/api/v1/risk/score</code></p>
+<p>Calculate risk score (0&ndash;100) for an AI system based on multiple weighted signals.</p>
+</div>
+
+<h3>Other Endpoints</h3>
+<div class="endpoint">
+<p><span class="method method-get">GET</span> <code>/api/v1/policies</code> &mdash; List available governance policies</p>
+<p><span class="method method-get">GET</span> <code>/api/v1/audit</code> &mdash; Query audit trail (hash-chained logs)</p>
+<p><span class="method method-post">POST</span> <code>/api/v1/redteam/run</code> &mdash; Run adversarial tests against guardrails</p>
+<p><span class="method method-post">POST</span> <code>/api/v1/playbook/run</code> &mdash; Execute governance playbooks</p>
+<p><span class="method method-get">GET</span> <code>/api/v1/dashboard/stats</code> &mdash; Aggregated metrics and stats</p>
+</div>
+
+<!-- RISK SCORING -->
+<h2 id="risk">Risk Scoring Engine</h2>
+<p>The risk scorer evaluates AI systems on a 0&ndash;100 scale across 6 weighted categories. Used for governance decisions, audit prioritization, and compliance reporting.</p>
+
+<table>
+<thead><tr><th>Category</th><th>Weight</th><th>Key Signals</th></tr></thead>
+<tbody>
+<tr><td><strong>Data Sensitivity</strong></td><td>25%</td><td>PII types present, data volume, cross-border transfer (+10)</td></tr>
+<tr><td><strong>Autonomy Level</strong></td><td>20%</td><td>Advisory (20) &rarr; Human-in-loop (40) &rarr; Supervised (70) &rarr; Fully autonomous (100)</td></tr>
+<tr><td><strong>Impact Scope</strong></td><td>20%</td><td>Internal (10) &rarr; Limited (25) &rarr; Broad (40) &rarr; Public (50); +25 for vulnerable populations</td></tr>
+<tr><td><strong>Model Risk</strong></td><td>15%</td><td>Training data provenance, hallucination history, model size/complexity</td></tr>
+<tr><td><strong>Regulatory Exposure</strong></td><td>10%</td><td>GDPR, EU AI Act, HIPAA, sector-specific rules</td></tr>
+<tr><td><strong>Org Readiness</strong></td><td>10%</td><td>Controls (-50), team training (-20), incident response plan (-30) &mdash; inverted</td></tr>
+</tbody>
+</table>
+
+<div class="card">
+<h3>Risk Levels</h3>
+<table>
+<thead><tr><th>Score</th><th>Level</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>0&ndash;25</td><td><span class="badge badge-green">LOW</span></td><td>Standard monitoring</td></tr>
+<tr><td>26&ndash;50</td><td><span class="badge badge-blue">MEDIUM</span></td><td>Enhanced logging, periodic review</td></tr>
+<tr><td>51&ndash;75</td><td><span class="badge badge-yellow">HIGH</span></td><td>Mandatory Tier 2, human oversight required</td></tr>
+<tr><td>76&ndash;100</td><td><span class="badge badge-red">CRITICAL</span></td><td>Block by default, executive approval needed</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>PII Risk Weights</h3>
+<table>
+<thead><tr><th>PII Type</th><th>Score</th><th>PII Type</th><th>Score</th></tr></thead>
+<tbody>
+<tr><td>SSN / Government ID</td><td>100</td><td>Address</td><td>60</td></tr>
+<tr><td>Credentials / API Keys</td><td>100</td><td>Date of Birth</td><td>55</td></tr>
+<tr><td>Biometric Data</td><td>95</td><td>Phone Number</td><td>50</td></tr>
+<tr><td>Health Records</td><td>95</td><td>Email Address</td><td>40</td></tr>
+<tr><td>Financial Data</td><td>90</td><td>Person Name</td><td>30</td></tr>
+</tbody>
+</table>
+
+<!-- FOOTER -->
+<footer>
+  AEGIS v1.0 &mdash; AI Ethics & Governance Intelligence System<br>
+  <a href="/swagger" style="color:#60a5fa;">Swagger UI</a> &middot; <a href="/redoc" style="color:#60a5fa;">ReDoc</a> &middot; <a href="/" style="color:#60a5fa;">Frontend</a>
+</footer>
+
+</div>
+</body>
+</html>

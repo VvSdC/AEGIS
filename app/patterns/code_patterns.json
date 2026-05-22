@@ -1,0 +1,1293 @@
+{
+  "version": "2.0",
+  "description": "Insecure code pattern detection for LLM-generated code. Based on Bandit, Bearer, Semgrep, ESLint-security, and OWASP guidelines. Tier 1 regex-based detection.",
+  "notes": {
+    "purpose": "Detect insecure code patterns in LLM responses that generate or discuss code",
+    "languages": ["python", "javascript", "java", "go", "ruby", "php", "csharp", "shell"],
+    "severity_levels": {
+      "critical": "Immediate exploitation risk — block or flag prominently",
+      "high": "Serious vulnerability — requires remediation",
+      "medium": "Potential security issue — review recommended",
+      "low": "Code smell or minor issue — informational"
+    },
+    "false_positive_guidance": {
+      "comments": "Strip or weight down hits in comment lines (// # -- /* */ lines) before scoring",
+      "documentation": "Educational context (docstrings, markdown code examples) lowers confidence — apply 0.6x multiplier",
+      "missing_authorization": "Heuristic only — requires surrounding context to be meaningful; treat as low-confidence signal",
+      "shell_params": "Positional param patterns ($1, $@) are noisy — require shell=True or eval context to escalate",
+      "redos": "Flag for human review, not auto-block; many ReDoS patterns are benign in practice"
+    },
+    "regex_limitations": "Regex cannot perform dataflow analysis. Patterns look for structural indicators. High-confidence = pattern almost always indicates a real bug. Low-confidence = structural resemblance only; requires context scoring."
+  },
+
+  "categories": {
+    "injection": {
+      "description": "SQL, Command, LDAP, XPath, Template, NoSQL injection patterns",
+      "entities": [
+        {
+          "name": "sql_injection_string_format",
+          "description": "SQL query built with string formatting or concatenation",
+          "severity": "critical",
+          "cwe": "CWE-89",
+          "languages": ["python", "javascript", "java", "php", "ruby"],
+          "patterns": [
+            {
+              "regex": "(?:execute|cursor\\.execute|query|raw|rawQuery|executeQuery|createQuery|nativeQuery)\\s*\\(\\s*[\"'`]\\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)[^\"'`]*[\"'`]\\s*%\\s*",
+              "flags": ["IGNORECASE"],
+              "description": "Python/Ruby % string formatting in SQL"
+            },
+            {
+              "regex": "(?:execute|query|rawQuery)\\s*\\(\\s*[\"'`][^\"'`]*\\$\\{[^}]+\\}[^\"'`]*[\"'`]\\s*\\)",
+              "flags": ["IGNORECASE"],
+              "description": "JavaScript template literal interpolation inside SQL string"
+            },
+            {
+              "regex": "(?:execute|query|rawQuery|raw)\\s*\\(\\s*f[\"'][^\"']*(?:SELECT|INSERT|UPDATE|DELETE|DROP|WHERE)[^\"']*[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "Python f-string in SQL query"
+            },
+            {
+              "regex": "\\.format\\s*\\([^)]+\\)[^;\\n]*(?:SELECT|INSERT|UPDATE|DELETE|DROP|WHERE|FROM)",
+              "flags": ["IGNORECASE"],
+              "description": "Python .format() result used in SQL context"
+            },
+            {
+              "regex": "[\"']\\s*(?:SELECT|INSERT|UPDATE|DELETE|WHERE|FROM|DROP)[^\"']*[\"']\\s*\\+\\s*[a-zA-Z_$][a-zA-Z0-9_$]*",
+              "flags": ["IGNORECASE"],
+              "description": "SQL string concatenation with variable (Java/JS/Python)"
+            },
+            {
+              "regex": "[a-zA-Z_$][a-zA-Z0-9_$]*\\s*\\+\\s*[\"'][^\"']*(?:SELECT|INSERT|UPDATE|DELETE|WHERE)[^\"']*[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "Variable concatenated before SQL keyword"
+            },
+            {
+              "regex": "\\$_(?:GET|POST|REQUEST|COOKIE|SERVER)\\s*\\[[^\\]]+\\][^;\\n]*(?:mysql_query|mysqli_query|pg_query|sqlite_query|PDO\\s*->\\s*(?:query|prepare|exec))",
+              "flags": ["IGNORECASE"],
+              "description": "PHP superglobal directly in SQL function — covers PDO"
+            },
+            {
+              "regex": "(?:knex|sequelize|typeorm)\\s*\\.\\s*raw\\s*\\([^)]*(?:\\+|\\$\\{|%s|f[\"'])",
+              "flags": ["IGNORECASE"],
+              "description": "ORM raw query with interpolation (Knex/Sequelize/TypeORM)"
+            },
+            {
+              "regex": "(?:cursor|conn|connection|db)\\s*\\.\\s*execute\\s*\\(\\s*[\"'][^\"']*(?:SELECT|INSERT|UPDATE|DELETE)[^\"']*[\"']\\s*\\+",
+              "flags": ["IGNORECASE"],
+              "description": "DB cursor.execute with string concatenation"
+            }
+          ]
+        },
+        {
+          "name": "command_injection",
+          "description": "OS command execution with user-controlled or dynamic input",
+          "severity": "critical",
+          "cwe": "CWE-78",
+          "languages": ["python", "javascript", "java", "ruby", "php", "shell"],
+          "patterns": [
+            {
+              "regex": "(?:os\\.system|os\\.popen)\\s*\\(\\s*(?:[^)]*(?:\\+|%s|%\\(|\\$\\{|f[\"'])|[a-zA-Z_][a-zA-Z0-9_]*\\s*\\))",
+              "flags": ["IGNORECASE"],
+              "description": "Python os.system/popen with interpolation or bare variable"
+            },
+            {
+              "regex": "subprocess\\.(?:call|run|Popen|check_output|check_call)\\s*\\([^)]*shell\\s*=\\s*True",
+              "flags": ["IGNORECASE"],
+              "description": "Python subprocess with shell=True — any form"
+            },
+            {
+              "regex": "subprocess\\.(?:call|run|Popen|check_output)\\s*\\(\\s*(?:[a-zA-Z_][a-zA-Z0-9_]*|f[\"']|[^)]*(?:\\+|%s|\\$\\{))",
+              "flags": ["IGNORECASE"],
+              "description": "Python subprocess with variable or interpolated command"
+            },
+            {
+              "regex": "(?:exec|execSync|spawn|spawnSync|execFile|execFileSync)\\s*\\([^)]*(?:\\$\\{[^}]+\\}|\\+\\s*[a-zA-Z_$]|req\\.|request\\.|params\\.|body\\.)",
+              "flags": [],
+              "description": "Node.js command execution with template literal or request data"
+            },
+            {
+              "regex": "Runtime\\.getRuntime\\(\\)\\.exec\\s*\\([^)]*(?:\\+|String\\.format|request|input)",
+              "flags": [],
+              "description": "Java Runtime.exec with concatenation or user input"
+            },
+            {
+              "regex": "(?:system|exec|passthru|shell_exec|popen|proc_open|pcntl_exec)\\s*\\(\\s*(?:\\$(?:_GET|_POST|_REQUEST|_COOKIE)|\\$[a-zA-Z_])",
+              "flags": [],
+              "description": "PHP command execution with superglobal or variable"
+            },
+            {
+              "regex": "(?:`[^`]*#\\{|%x\\s*\\{[^}]*#\\{|Kernel\\.(?:system|exec)\\s*\\([^)]*(?:\\+|#\\{|\\#{))",
+              "flags": [],
+              "description": "Ruby command execution with string interpolation"
+            },
+            {
+              "regex": "subprocess\\.Popen\\s*\\(\\s*\\[\\s*[\"'][/a-z_-]*(?:sh|bash|cmd)[\"']\\s*,\\s*[\"']-c[\"']\\s*,\\s*[a-zA-Z_]",
+              "flags": ["IGNORECASE"],
+              "description": "subprocess.Popen(['/bin/sh', '-c', variable]) — shell via list"
+            }
+          ]
+        },
+        {
+          "name": "ldap_injection",
+          "description": "LDAP query with unsanitized input",
+          "severity": "high",
+          "cwe": "CWE-90",
+          "languages": ["python", "java", "php"],
+          "patterns": [
+            {
+              "regex": "(?:ldap_search|ldap_filter|search_s|search_ext_s)\\s*\\([^)]*[\"']\\s*\\([^)]*=\\s*(?:[\"']?\\s*\\+|%s|%\\(|\\$\\{|f[\"'])",
+              "flags": ["IGNORECASE"],
+              "description": "LDAP filter with string interpolation or concatenation"
+            },
+            {
+              "regex": "f[\"'][^\"']*\\([a-zA-Z]+=\\{[^}]+\\}\\)",
+              "flags": [],
+              "description": "LDAP filter f-string with variable attribute value"
+            },
+            {
+              "regex": "NamingEnumeration.*(?:search|SearchControls).*(?:request|input|param|\\+)",
+              "flags": ["IGNORECASE"],
+              "description": "Java LDAP search with user input"
+            }
+          ]
+        },
+        {
+          "name": "xpath_injection",
+          "description": "XPath query with unsanitized input",
+          "severity": "high",
+          "cwe": "CWE-643",
+          "languages": ["python", "java", "javascript", "php"],
+          "patterns": [
+            {
+              "regex": "(?:xpath|selectNodes|evaluate|XPathFactory|XPathExpression)\\s*\\(?[^)]*[\"'][^\"']*[\"']\\s*(?:\\+|%|\\$\\{|format)",
+              "flags": ["IGNORECASE"],
+              "description": "XPath query with string concatenation or interpolation"
+            },
+            {
+              "regex": "(?:xpath|selectNodes)\\s*\\(?\\s*f[\"']|\\$\\{[^}]+\\}",
+              "flags": [],
+              "description": "XPath with f-string or template literal"
+            },
+            {
+              "regex": "\\.compile\\s*\\([^)]*(?:request|input|user|params|\\+|f[\"'])[^)]*\\)\\s*\\.(?:evaluate|select)",
+              "flags": ["IGNORECASE"],
+              "description": "XPath compile+evaluate with user data"
+            }
+          ]
+        },
+        {
+          "name": "template_injection",
+          "description": "Server-side template injection (SSTI)",
+          "severity": "critical",
+          "cwe": "CWE-1336",
+          "languages": ["python", "java", "javascript", "ruby"],
+          "patterns": [
+            {
+              "regex": "render_template_string\\s*\\(\\s*[a-zA-Z_][a-zA-Z0-9_]*",
+              "flags": [],
+              "description": "Flask render_template_string with variable (not a literal)"
+            },
+            {
+              "regex": "jinja2\\.Template\\s*\\(\\s*[a-zA-Z_$][a-zA-Z0-9_$]*\\s*\\)",
+              "flags": [],
+              "description": "Jinja2 Template() constructed from a variable"
+            },
+            {
+              "regex": "(?:Velocity|Freemarker|Thymeleaf)[^;\\n]*\\.(?:merge|process|render)\\s*\\([^)]*(?:\\+|request|input|user)",
+              "flags": ["IGNORECASE"],
+              "description": "Java template engine merge/process with user input"
+            },
+            {
+              "regex": "new\\s+Function\\s*\\([^)]*(?:request|req|input|user|params|\\+|\\$\\{)",
+              "flags": [],
+              "description": "JavaScript Function constructor with user input"
+            },
+            {
+              "regex": "\\beval\\s*\\(\\s*[^)]*(?:template|tmpl|tpl|render|html)[^)]*\\)",
+              "flags": ["IGNORECASE"],
+              "description": "eval() used for template rendering"
+            },
+            {
+              "regex": "ERB\\.new\\s*\\([^)]*(?:\\+|request|input|user|#\\{)|<%=.*#\\{[^}]+\\}",
+              "flags": [],
+              "description": "Ruby ERB template injection"
+            }
+          ]
+        },
+        {
+          "name": "nosql_injection",
+          "description": "NoSQL injection (MongoDB, Redis, etc.)",
+          "severity": "high",
+          "cwe": "CWE-943",
+          "languages": ["javascript", "python"],
+          "patterns": [
+            {
+              "regex": "\\$where\\s*:\\s*(?:[\"'`][^\"'`]*(?:\\+|\\$\\{)|[a-zA-Z_$][a-zA-Z0-9_$]*)",
+              "flags": [],
+              "description": "MongoDB $where with user input or variable"
+            },
+            {
+              "regex": "\\.(?:find|findOne|aggregate|update|updateOne|deleteOne|deleteMany)\\s*\\(\\s*(?:req\\.|request\\.|params\\.|body\\.|JSON\\.parse\\s*\\(\\s*req)",
+              "flags": [],
+              "description": "MongoDB query method called directly with request data"
+            },
+            {
+              "regex": "\\$(?:gt|gte|lt|lte|ne|in|nin|regex|where|expr)\\s*:\\s*(?:req\\.|request\\.|params\\.|body\\.|\\$_(?:GET|POST|REQUEST))",
+              "flags": [],
+              "description": "MongoDB operator with direct request input"
+            },
+            {
+              "regex": "JSON\\.parse\\s*\\(\\s*req(?:uest)?\\.(?:body|query|params)[^)]*\\)\\s*[^;\\n]*(?:find|update|insert|delete|aggregate)",
+              "flags": [],
+              "description": "JSON.parse of request body piped into DB operation"
+            }
+          ]
+        }
+      ]
+    },
+
+    "hardcoded_secrets": {
+      "description": "Hardcoded credentials, API keys, tokens, and secrets in code",
+      "entities": [
+        {
+          "name": "hardcoded_password",
+          "description": "Password/secret hardcoded in source",
+          "severity": "high",
+          "cwe": "CWE-798",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "(?:password|passwd|pwd|secret|api_?key|apikey|auth_?token|access_?token|private_?key|secret_?key)\\s*[=:]\\s*[\"'][^\"'\\s]{8,}[\"'](?!.*(?:placeholder|example|changeme|your_|<|TODO|FIXME|test|sample|dummy))",
+              "flags": ["IGNORECASE"],
+              "description": "Hardcoded password/secret assignment — excludes obvious placeholders"
+            },
+            {
+              "regex": "(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\\s*=\\s*[\"'][A-Za-z0-9+/=_\\-]{16,}[\"']",
+              "flags": [],
+              "description": "Environment-variable-style hardcoded secret (all caps, 16+ chars)"
+            }
+          ]
+        },
+        {
+          "name": "aws_credentials",
+          "description": "AWS access keys and secrets in code",
+          "severity": "critical",
+          "cwe": "CWE-798",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "\\bAKIA[0-9A-Z]{16}\\b",
+              "flags": [],
+              "description": "AWS Access Key ID"
+            },
+            {
+              "regex": "\\bASIA[0-9A-Z]{16}\\b",
+              "flags": [],
+              "description": "AWS STS temporary access key"
+            },
+            {
+              "regex": "(?:aws_secret_access_key|AWS_SECRET_ACCESS_KEY)\\s*[=:]\\s*[\"']?[A-Za-z0-9/+=]{40}[\"']?",
+              "flags": [],
+              "description": "AWS Secret Access Key (labeled)"
+            }
+          ]
+        },
+        {
+          "name": "private_key_material",
+          "description": "Private key material embedded in code",
+          "severity": "critical",
+          "cwe": "CWE-321",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "-----BEGIN\\s+(?:RSA\\s+)?PRIVATE\\s+KEY-----",
+              "flags": [],
+              "description": "PEM RSA or generic private key"
+            },
+            {
+              "regex": "-----BEGIN\\s+(?:EC|DSA|OPENSSH|ENCRYPTED)\\s+PRIVATE\\s+KEY-----",
+              "flags": [],
+              "description": "EC/DSA/OpenSSH/encrypted private key"
+            }
+          ]
+        },
+        {
+          "name": "jwt_secret_hardcoded",
+          "description": "JWT secret or live token in source",
+          "severity": "high",
+          "cwe": "CWE-798",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "(?:jwt_secret|JWT_SECRET|jwtSecret|jwt_key|JWT_KEY)\\s*[=:]\\s*[\"'][^\"']{8,}[\"'](?!.*(?:placeholder|example|changeme|your_|<|TODO))",
+              "flags": [],
+              "description": "Hardcoded JWT secret"
+            },
+            {
+              "regex": "eyJ[A-Za-z0-9_\\-]{10,}\\.eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}",
+              "flags": [],
+              "description": "Live JWT token in source code"
+            }
+          ]
+        },
+        {
+          "name": "third_party_api_key",
+          "description": "Third-party service API keys in source",
+          "severity": "high",
+          "cwe": "CWE-798",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}",
+              "flags": [],
+              "description": "GitHub token"
+            },
+            {
+              "regex": "\\bsk-[A-Za-z0-9]{48}\\b",
+              "flags": [],
+              "description": "OpenAI legacy API key"
+            },
+            {
+              "regex": "\\bsk-proj-[A-Za-z0-9\\-_]{100,}\\b",
+              "flags": [],
+              "description": "OpenAI project-scoped key"
+            },
+            {
+              "regex": "\\bsk-ant-(?:api03-)?[A-Za-z0-9\\-_]{93,}\\b",
+              "flags": [],
+              "description": "Anthropic API key"
+            },
+            {
+              "regex": "\\bAIza[0-9A-Za-z_\\-]{35}\\b",
+              "flags": [],
+              "description": "Google/GCP/Gemini API key"
+            },
+            {
+              "regex": "\\bSG\\.[A-Za-z0-9_\\-]{22}\\.[A-Za-z0-9_\\-]{43}\\b",
+              "flags": [],
+              "description": "SendGrid API key"
+            },
+            {
+              "regex": "\\bsk_live_[0-9a-zA-Z]{24,}\\b",
+              "flags": [],
+              "description": "Stripe live secret key"
+            },
+            {
+              "regex": "\\bxox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}\\b",
+              "flags": [],
+              "description": "Slack token"
+            },
+            {
+              "regex": "\\bhf_[A-Za-z0-9]{34,}\\b",
+              "flags": [],
+              "description": "HuggingFace token"
+            },
+            {
+              "regex": "\\brzp_(?:live|test)_[A-Za-z0-9]{14,}\\b",
+              "flags": [],
+              "description": "Razorpay API key"
+            }
+          ]
+        },
+        {
+          "name": "database_connection_string",
+          "description": "Database connection strings with embedded credentials",
+          "severity": "high",
+          "cwe": "CWE-798",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "(?:mysql|postgres(?:ql)?|mongodb(?:\\+srv)?|redis|amqp|rabbitmq|mssql|sqlserver)://[^:@\\s]{1,}:[^@\\s]{3,}@[a-zA-Z0-9.\\-]+",
+              "flags": ["IGNORECASE"],
+              "description": "Database URL with embedded user:password credentials"
+            },
+            {
+              "regex": "(?:Data\\s+Source|Server)=[^;]+;[^;]*(?:Password|Pwd)=[^;\\s]{3,}",
+              "flags": ["IGNORECASE"],
+              "description": ".NET / ADO.NET connection string with password"
+            },
+            {
+              "regex": "(?:host|server)=[^;]+;.*(?:password|pwd)=(?!\\s*[\"']?(?:password|\\*|<|\\{|changeme))[^;\\s\"']{4,}",
+              "flags": ["IGNORECASE"],
+              "description": "Key=value connection string with non-placeholder password"
+            }
+          ]
+        },
+        {
+          "name": "hardcoded_internal_endpoint",
+          "description": "Hardcoded internal IP addresses or staging/internal URLs",
+          "severity": "medium",
+          "cwe": "CWE-312",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "[\"']https?://(?:10\\.|192\\.168\\.|172\\.(?:1[6-9]|2[0-9]|3[01])\\.|127\\.)[0-9.]+(?::[0-9]+)?(?:/[^\"']*)?[\"']",
+              "flags": [],
+              "description": "Hardcoded RFC1918 / loopback URL in string literal"
+            },
+            {
+              "regex": "(?:BASE_URL|API_HOST|API_URL|ENDPOINT|SERVICE_URL)\\s*[=:]\\s*[\"']https?://(?:10\\.|192\\.168\\.|172\\.1[6-9]\\.|localhost)[^\"']+[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "Hardcoded internal endpoint in config variable"
+            }
+          ]
+        }
+      ]
+    },
+
+    "insecure_crypto": {
+      "description": "Weak or insecure cryptographic implementations",
+      "entities": [
+        {
+          "name": "weak_hash_algorithm",
+          "description": "Use of weak hashing algorithms (MD5, SHA1)",
+          "severity": "medium",
+          "cwe": "CWE-328",
+          "languages": ["python", "javascript", "java", "php"],
+          "patterns": [
+            {
+              "regex": "hashlib\\.(?:md5|sha1)\\s*\\(|hashlib\\.new\\s*\\(\\s*[\"'](?:md5|sha1)[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "Python hashlib MD5/SHA1 including hashlib.new() form"
+            },
+            {
+              "regex": "MD5\\.Create\\s*\\(|MessageDigest\\.getInstance\\s*\\(\\s*[\"'](?:MD5|SHA-?1)[\"']",
+              "flags": [],
+              "description": "Java MD5/SHA1 digest"
+            },
+            {
+              "regex": "crypto\\.createHash\\s*\\(\\s*[\"'](?:md5|sha1)[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "Node.js crypto MD5/SHA1"
+            },
+            {
+              "regex": "\\bmd5\\s*\\(|\\bsha1\\s*\\(",
+              "flags": ["IGNORECASE"],
+              "description": "PHP/Ruby md5()/sha1() function calls"
+            }
+          ]
+        },
+        {
+          "name": "weak_cipher",
+          "description": "Use of deprecated or weak encryption algorithms",
+          "severity": "high",
+          "cwe": "CWE-327",
+          "languages": ["python", "javascript", "java"],
+          "patterns": [
+            {
+              "regex": "\\b(?:DES|DESede|Triple-?DES|RC4|RC2|Blowfish|IDEA)\\b(?:[./]|\\s*\\(|\\s*\\.getInstance)",
+              "flags": [],
+              "description": "Weak cipher algorithm reference (DES, RC4, RC2, Blowfish, IDEA)"
+            },
+            {
+              "regex": "Cipher\\.getInstance\\s*\\(\\s*[\"'][A-Za-z0-9/-]*(?:DES|RC4|RC2|Blowfish)[A-Za-z0-9/-]*[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "Java weak cipher instantiation"
+            },
+            {
+              "regex": "\\bAES/ECB/",
+              "flags": [],
+              "description": "AES with ECB mode (deterministic, no IV)"
+            },
+            {
+              "regex": "Cipher\\.getInstance\\s*\\(\\s*[\"']AES[\"']\\s*\\)",
+              "flags": [],
+              "description": "AES without mode specified — defaults to ECB in Java"
+            }
+          ]
+        },
+        {
+          "name": "weak_random",
+          "description": "Non-cryptographic random for security-sensitive purposes",
+          "severity": "medium",
+          "cwe": "CWE-338",
+          "languages": ["python", "javascript", "java"],
+          "patterns": [
+            {
+              "regex": "\\brandom\\.(?:random|randint|choice|randrange|shuffle|sample)\\b[^\\n]*(?:=|\\btoken\\b|\\bpassword\\b|\\bsecret\\b|\\bkey\\b|\\bnonce\\b|\\bsalt\\b|\\biv\\b|\\bcsrf\\b|\\botp\\b)",
+              "flags": ["IGNORECASE"],
+              "description": "Python random module result assigned to security-sensitive variable"
+            },
+            {
+              "regex": "Math\\.random\\s*\\(\\s*\\)\\s*(?:\\.|[^;\\n]*(?:token|password|secret|key|nonce|salt|csrf|otp))",
+              "flags": ["IGNORECASE"],
+              "description": "JavaScript Math.random() result used for security value"
+            },
+            {
+              "regex": "new\\s+(?:java\\.util\\.)?Random\\s*\\(\\s*\\)\\s*(?:\\.|[^;\\n]*(?:token|password|secret|key|nonce|salt))",
+              "flags": ["IGNORECASE"],
+              "description": "Java java.util.Random for security-sensitive value"
+            }
+          ]
+        },
+        {
+          "name": "hardcoded_iv_key",
+          "description": "Hardcoded initialization vector or encryption key",
+          "severity": "high",
+          "cwe": "CWE-329",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "(?:^|\\s)(?:iv|IV|nonce|initialization_vector)\\s*[=:]\\s*[\"'](?:[A-Fa-f0-9]{16,}|[A-Za-z0-9+/]{16,})[\"']",
+              "flags": ["MULTILINE"],
+              "description": "Hardcoded IV/nonce as hex or base64 string"
+            },
+            {
+              "regex": "\\b(?:IV|iv)\\s*=\\s*b[\"'][\\x00-\\xff]{8,}[\"']",
+              "flags": [],
+              "description": "Python bytes literal as hardcoded IV"
+            },
+            {
+              "regex": "(?:AES|DES|ChaCha20|encryption)_?(?:key|KEY)\\s*[=:]\\s*[\"'][A-Za-z0-9+/=]{16,}[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "Hardcoded encryption key"
+            },
+            {
+              "regex": "IvParameterSpec\\s*\\(\\s*new\\s+byte\\s*\\[\\s*\\]\\s*\\{",
+              "flags": [],
+              "description": "Java hardcoded IV byte array"
+            }
+          ]
+        },
+        {
+          "name": "insecure_ssl_tls",
+          "description": "Disabled SSL/TLS verification or weak TLS protocol versions",
+          "severity": "high",
+          "cwe": "CWE-295",
+          "languages": ["python", "javascript", "java"],
+          "patterns": [
+            {
+              "regex": "verify\\s*=\\s*False(?!\\w)|ssl\\.CERT_NONE|CERT_NONE|InsecureRequestWarning|disable_warnings\\s*\\(",
+              "flags": [],
+              "description": "Python SSL certificate verification disabled"
+            },
+            {
+              "regex": "\\bSSLv2\\b|\\bSSLv3\\b|\\bTLSv1(?:\\.0)?\\b|ssl_version.*(?:SSLv|TLSv1(?!\\.2|\\.3))",
+              "flags": ["IGNORECASE"],
+              "description": "Deprecated SSL/TLS version (SSLv2/3, TLS 1.0)"
+            },
+            {
+              "regex": "NODE_TLS_REJECT_UNAUTHORIZED\\s*=\\s*[\"']?0[\"']?",
+              "flags": [],
+              "description": "Node.js TLS validation disabled via env var"
+            },
+            {
+              "regex": "rejectUnauthorized\\s*:\\s*false",
+              "flags": [],
+              "description": "Node.js TLS rejectUnauthorized: false"
+            },
+            {
+              "regex": "checkCertificate\\s*\\(\\s*false\\s*\\)|setSSLSocketFactory\\s*\\([^)]*null|TrustAllCerts|AllTrustingTrustManager|X509TrustManager[^{]*\\{[^}]*return;",
+              "flags": [],
+              "description": "Java TLS certificate check bypassed"
+            }
+          ]
+        }
+      ]
+    },
+
+    "dangerous_functions": {
+      "description": "Use of dangerous functions — code execution, deserialization, XXE, reflection",
+      "entities": [
+        {
+          "name": "code_execution",
+          "description": "Dynamic code execution with external/user input",
+          "severity": "critical",
+          "cwe": "CWE-94",
+          "languages": ["python", "javascript", "php", "ruby"],
+          "patterns": [
+            {
+              "regex": "\\beval\\s*\\(\\s*(?:request|req|input|user|data|params|args|body|\\$_|\\$[a-zA-Z])",
+              "flags": ["IGNORECASE"],
+              "description": "eval() with user-controlled or request input"
+            },
+            {
+              "regex": "\\bexec\\s*\\(\\s*(?:compile\\s*\\(|open\\s*\\(|request|input|user|data)",
+              "flags": ["IGNORECASE"],
+              "description": "Python exec() with dynamic or user content"
+            },
+            {
+              "regex": "new\\s+Function\\s*\\([^)]*(?:req|request|user|input|params|body|\\.query|\\.body)",
+              "flags": [],
+              "description": "JavaScript Function constructor with user input"
+            },
+            {
+              "regex": "(?:preg_replace|preg_replace_callback)\\s*\\([^,]*[\"']/[^/]*e[\"']",
+              "flags": [],
+              "description": "PHP preg_replace with /e modifier (arbitrary code execution)"
+            },
+            {
+              "regex": "(?:assert|call_user_func|call_user_func_array|create_function)\\s*\\(\\s*\\$(?!this)",
+              "flags": [],
+              "description": "PHP dangerous functions with variable argument"
+            }
+          ]
+        },
+        {
+          "name": "unsafe_deserialization",
+          "description": "Deserialization of untrusted data",
+          "severity": "critical",
+          "cwe": "CWE-502",
+          "languages": ["python", "java", "php", "ruby"],
+          "patterns": [
+            {
+              "regex": "(?:pickle|cPickle|_pickle)\\.loads?\\s*\\(",
+              "flags": [],
+              "description": "Python pickle deserialization"
+            },
+            {
+              "regex": "yaml\\.(?:load|unsafe_load)\\s*\\([^)]*(?!Loader\\s*=\\s*yaml\\.(?:Safe|Full|Base)Loader)",
+              "flags": [],
+              "description": "PyYAML yaml.load() without SafeLoader"
+            },
+            {
+              "regex": "(?:ObjectInputStream|XMLDecoder)\\s*\\(",
+              "flags": [],
+              "description": "Java ObjectInputStream or XMLDecoder — arbitrary deserialization"
+            },
+            {
+              "regex": "\\.readObject\\s*\\(\\s*\\)",
+              "flags": [],
+              "description": "Java readObject() — Java deserialization gadget entry point"
+            },
+            {
+              "regex": "unserialize\\s*\\(\\s*(?:\\$_(?:GET|POST|REQUEST|COOKIE)|\\$(?:input|data|body|request))",
+              "flags": [],
+              "description": "PHP unserialize with user-controlled input"
+            },
+            {
+              "regex": "(?:Marshal|YAML)\\.load\\s*\\(",
+              "flags": [],
+              "description": "Ruby Marshal.load / YAML.load (unsafe)"
+            },
+            {
+              "regex": "jsonpickle\\.decode\\s*\\(",
+              "flags": [],
+              "description": "Python jsonpickle.decode (permits code execution)"
+            }
+          ]
+        },
+        {
+          "name": "xml_external_entity",
+          "description": "XML parsing vulnerable to XXE attacks",
+          "severity": "high",
+          "cwe": "CWE-611",
+          "languages": ["python", "java", "php"],
+          "patterns": [
+            {
+              "regex": "(?:etree\\.parse|minidom\\.parse|sax\\.parse|pulldom\\.parse)\\s*\\((?!.*defusedxml)",
+              "flags": [],
+              "description": "Python XML parsing without defusedxml"
+            },
+            {
+              "regex": "lxml\\.etree\\s*\\.\\s*XMLParser\\s*\\([^)]*(?!resolve_entities\\s*=\\s*False)(?!no_network\\s*=\\s*True)",
+              "flags": [],
+              "description": "lxml XMLParser without entity/network restrictions"
+            },
+            {
+              "regex": "DocumentBuilderFactory\\.newInstance\\s*\\(\\s*\\)(?![\\s\\S]{0,200}setFeature[\\s\\S]{0,100}disallow-doctype-decl)",
+              "flags": [],
+              "description": "Java DocumentBuilderFactory without XXE protection features"
+            },
+            {
+              "regex": "(?:simplexml_load_string|simplexml_load_file|DOMDocument)\\s*\\([^)]*\\bLIBXML_NOENT\\b",
+              "flags": [],
+              "description": "PHP XML with LIBXML_NOENT (entity expansion enabled)"
+            }
+          ]
+        },
+        {
+          "name": "unsafe_reflection",
+          "description": "Dynamic class/method loading from user input",
+          "severity": "high",
+          "cwe": "CWE-470",
+          "languages": ["python", "java", "php"],
+          "patterns": [
+            {
+              "regex": "getattr\\s*\\([^,]+,\\s*(?:request|req|input|user|params|args|body)(?:\\.[a-z_]+)?",
+              "flags": ["IGNORECASE"],
+              "description": "Python getattr() with user-controlled attribute name"
+            },
+            {
+              "regex": "__import__\\s*\\(\\s*(?:request|req|input|user|params|args|body)",
+              "flags": ["IGNORECASE"],
+              "description": "Python __import__ with user input"
+            },
+            {
+              "regex": "importlib\\.import_module\\s*\\([^)]*(?:request|input|user|params|args|body)",
+              "flags": ["IGNORECASE"],
+              "description": "Python importlib.import_module with user input"
+            },
+            {
+              "regex": "Class\\.forName\\s*\\([^)]*(?:request|getParameter|input|user|param)",
+              "flags": ["IGNORECASE"],
+              "description": "Java Class.forName() with user input"
+            }
+          ]
+        }
+      ]
+    },
+
+    "path_traversal": {
+      "description": "Path traversal and arbitrary file read/write",
+      "entities": [
+        {
+          "name": "path_traversal",
+          "description": "File operations with user-controlled paths",
+          "severity": "high",
+          "cwe": "CWE-22",
+          "languages": ["python", "javascript", "java", "php"],
+          "patterns": [
+            {
+              "regex": "\\bopen\\s*\\(\\s*(?:request|req|input|user|params|args|body|filename|filepath|path|name)(?:\\s*[+,]|\\s*\\))",
+              "flags": ["IGNORECASE"],
+              "description": "Python open() with user-controlled or generic path variable"
+            },
+            {
+              "regex": "os\\.path\\.join\\s*\\([^)]*(?:request|req|input|user|params|args|body|\\.\\.|\\$)",
+              "flags": ["IGNORECASE"],
+              "description": "Python os.path.join with user input or traversal"
+            },
+            {
+              "regex": "pathlib\\.Path\\s*\\([^)]*(?:request|input|user|params)\\s*\\)\\s*(?:/|\\s*\\.\\s*(?:joinpath|open|read|write))",
+              "flags": ["IGNORECASE"],
+              "description": "Python pathlib.Path constructed from user input"
+            },
+            {
+              "regex": "(?:Path|base_dir)\\s*(?:/|\\.joinpath)\\s*(?:user|input|request|params|filename|name)(?:[^a-zA-Z]|$)",
+              "flags": ["IGNORECASE"],
+              "description": "Path division operator with user-controlled segment"
+            },
+            {
+              "regex": "(?:readFile|writeFile|appendFile|createReadStream|createWriteStream|existsSync|statSync)\\s*\\([^)]*(?:req\\.|request\\.|params\\.|body\\.|query\\.|\\+\\s*[a-zA-Z_$])",
+              "flags": [],
+              "description": "Node.js filesystem operation with request data or concatenation"
+            },
+            {
+              "regex": "(?:include|require|include_once|require_once|file_get_contents|fopen|readfile)\\s*\\(\\s*\\$(?!__)",
+              "flags": [],
+              "description": "PHP file operation with user-controlled variable"
+            },
+            {
+              "regex": "send_file\\s*\\([^)]*(?:request\\.args|request\\.form|request\\.json|request\\.get_data|input|user)",
+              "flags": ["IGNORECASE"],
+              "description": "Flask send_file with user-controlled path"
+            }
+          ]
+        },
+        {
+          "name": "symlink_toctou",
+          "description": "TOCTOU race condition and insecure temp file creation",
+          "severity": "medium",
+          "cwe": "CWE-367",
+          "languages": ["python", "c"],
+          "patterns": [
+            {
+              "regex": "os\\.path\\.(?:exists|isfile|isdir)\\s*\\([^)]+\\)[^\\n{]*\\n[^\\n]*(?:open|write|chmod|chown|remove|unlink|rename)\\s*\\(",
+              "flags": [],
+              "description": "TOCTOU: path existence check followed by file operation on next line"
+            },
+            {
+              "regex": "\\b(?:mktemp|tempnam|tmpnam)\\s*\\(",
+              "flags": [],
+              "description": "Insecure temporary file creation (predictable name — use mkstemp)"
+            }
+          ]
+        }
+      ]
+    },
+
+    "ssrf": {
+      "description": "Server-Side Request Forgery",
+      "entities": [
+        {
+          "name": "ssrf",
+          "description": "HTTP requests with user-controlled or unchecked URLs",
+          "severity": "high",
+          "cwe": "CWE-918",
+          "languages": ["python", "javascript", "java", "php"],
+          "patterns": [
+            {
+              "regex": "requests\\.(?:get|post|put|delete|head|request)\\s*\\([^)]*(?:request\\.|req\\.|params\\.|body\\.|args\\.|form\\.|url|uri|target|endpoint|webhook|destination|host)(?:[^a-zA-Z_]|$)",
+              "flags": ["IGNORECASE"],
+              "description": "Python requests with user-controlled or generic URL variable"
+            },
+            {
+              "regex": "(?:httpx|aiohttp\\.ClientSession\\(\\)\\.|urllib\\.request\\.urlopen)\\s*\\.?(?:get|post|request)?\\s*\\([^)]*(?:url|uri|target|endpoint|webhook|destination|host|request\\.|params\\.|body\\.)",
+              "flags": ["IGNORECASE"],
+              "description": "Python httpx/aiohttp/urllib with URL variable"
+            },
+            {
+              "regex": "(?:fetch|axios\\.(?:get|post|put|request)|http\\.(?:get|request))\\s*\\([^)]*(?:req\\.|request\\.|params\\.|body\\.|query\\.|url|uri|target|webhook|endpoint)",
+              "flags": [],
+              "description": "JavaScript HTTP client with request-derived URL"
+            },
+            {
+              "regex": "(?:HttpClient|CloseableHttpClient|OkHttpClient|URL)\\s*[^;\\n]*(?:request|getParameter|input|user|param)(?:[^a-zA-Z_]|$)",
+              "flags": ["IGNORECASE"],
+              "description": "Java HTTP client with user-controlled URL"
+            },
+            {
+              "regex": "(?:file_get_contents|curl_exec|fopen)\\s*\\(\\s*\\$(?:_GET|_POST|_REQUEST|url|uri|target|endpoint|webhook)",
+              "flags": [],
+              "description": "PHP HTTP/file fetch with user-supplied URL"
+            }
+          ]
+        }
+      ]
+    },
+
+    "xss": {
+      "description": "Cross-Site Scripting (reflected, stored, DOM-based)",
+      "entities": [
+        {
+          "name": "xss_dom",
+          "description": "Direct DOM manipulation with unescaped user input",
+          "severity": "high",
+          "cwe": "CWE-79",
+          "languages": ["javascript"],
+          "patterns": [
+            {
+              "regex": "(?:innerHTML|outerHTML)\\s*[+=]\\s*(?!.*(?:DOMPurify|sanitize|escapeHtml|escape\\s*\\())[^;\\n]*(?:req|request|input|user|data|response|body|params|query|location\\.|window\\.|document\\.)",
+              "flags": ["IGNORECASE"],
+              "description": "innerHTML/outerHTML with user data and no visible sanitization"
+            },
+            {
+              "regex": "document\\.write\\s*\\([^)]*(?:req|request|input|user|data|response|location\\.|window\\.)",
+              "flags": ["IGNORECASE"],
+              "description": "document.write with user-controlled data"
+            },
+            {
+              "regex": "\\$\\s*\\([^)]+\\)\\.(?:html|append|prepend|after|before|replaceWith)\\s*\\([^)]*(?:req|request|input|user|data|response|params)",
+              "flags": ["IGNORECASE"],
+              "description": "jQuery DOM manipulation with user data (.html/.append/.prepend)"
+            }
+          ]
+        },
+        {
+          "name": "xss_server_side",
+          "description": "Server-side XSS via direct output of user data",
+          "severity": "high",
+          "cwe": "CWE-79",
+          "languages": ["php", "python"],
+          "patterns": [
+            {
+              "regex": "(?:echo|print)\\s+\\$_(?:GET|POST|REQUEST|COOKIE)\\s*\\[",
+              "flags": [],
+              "description": "PHP direct echo/print of superglobal without escaping"
+            },
+            {
+              "regex": "echo\\s+(?:htmlspecialchars)?\\s*\\$_(?:GET|POST|REQUEST)(?!.*ENT_QUOTES)",
+              "flags": [],
+              "description": "PHP echo without ENT_QUOTES in htmlspecialchars"
+            },
+            {
+              "regex": "dangerouslySetInnerHTML\\s*=\\s*\\{\\{\\s*__html\\s*:\\s*(?!DOMPurify|sanitize)[a-zA-Z_$][a-zA-Z0-9_.$]*\\s*\\}\\}",
+              "flags": [],
+              "description": "React dangerouslySetInnerHTML without DOMPurify/sanitize"
+            },
+            {
+              "regex": "\\{\\{\\s*[a-zA-Z_][a-zA-Z0-9_.]*\\s*\\|\\s*safe\\s*\\}\\}",
+              "flags": [],
+              "description": "Jinja2/Django {{ variable | safe }} — explicit bypass of autoescaping"
+            },
+            {
+              "regex": "Markup\\s*\\(\\s*[a-zA-Z_$][a-zA-Z0-9_.$]*\\s*\\)",
+              "flags": [],
+              "description": "Flask Markup() wrapping a variable — marks as safe without escaping"
+            },
+            {
+              "regex": "v-html\\s*=\\s*[\"'][^\"']*[\"']|:innerHTML\\s*=",
+              "flags": ["IGNORECASE"],
+              "description": "Vue.js v-html directive or :innerHTML binding"
+            }
+          ]
+        }
+      ]
+    },
+
+    "authentication": {
+      "description": "Authentication and session security issues",
+      "entities": [
+        {
+          "name": "weak_password_hashing",
+          "description": "Passwords stored or compared without proper hashing",
+          "severity": "high",
+          "cwe": "CWE-916",
+          "languages": ["python", "javascript", "java", "php"],
+          "patterns": [
+            {
+              "regex": "(?:stored_password|db_password|hashed|hash)\\s*==\\s*(?:password|passwd|pwd|input)|(?:password|passwd|pwd|input)\\s*==\\s*(?:stored|db|hashed|hash)",
+              "flags": ["IGNORECASE"],
+              "description": "Plain-text password comparison"
+            },
+            {
+              "regex": "(?:md5|sha1|sha256|sha512)\\s*\\([^)]*(?:password|passwd|pwd)[^)]*\\)",
+              "flags": ["IGNORECASE"],
+              "description": "Password hashed with fast hash (not bcrypt/argon2/scrypt)"
+            },
+            {
+              "regex": "(?:password|passwd)\\s*[=:].*base64\\.(?:b64encode|encodebytes|encode)",
+              "flags": ["IGNORECASE"],
+              "description": "Password encoded with base64 (reversible, not hashing)"
+            }
+          ]
+        },
+        {
+          "name": "insecure_session",
+          "description": "Insecure session cookie configuration",
+          "severity": "medium",
+          "cwe": "CWE-614",
+          "languages": ["python", "javascript", "php"],
+          "patterns": [
+            {
+              "regex": "(?:SESSION_COOKIE_SECURE|cookie[^=\\n]*secure)\\s*[=:]\\s*(?:False|false|0)",
+              "flags": [],
+              "description": "Session cookie without Secure flag"
+            },
+            {
+              "regex": "(?:SESSION_COOKIE_HTTPONLY|httpOnly|http_only)\\s*[=:]\\s*(?:False|false|0)",
+              "flags": [],
+              "description": "Session cookie without HttpOnly flag"
+            },
+            {
+              "regex": "(?:SameSite|samesite)\\s*[=:]\\s*[\"']?[Nn]one[\"']?(?![\\s\\S]{0,50}[Ss]ecure)",
+              "flags": [],
+              "description": "SameSite=None without Secure — allows cross-site cookie sending"
+            }
+          ]
+        },
+        {
+          "name": "jwt_vulnerabilities",
+          "description": "JWT implementation issues",
+          "severity": "high",
+          "cwe": "CWE-347",
+          "languages": ["python", "javascript", "java"],
+          "patterns": [
+            {
+              "regex": "algorithms?\\s*[=:]\\s*\\[?[\"']none[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "JWT 'none' algorithm — disables signature verification"
+            },
+            {
+              "regex": "jwt\\.decode\\s*\\([^)]*(?:verify\\s*=\\s*False|options\\s*=\\s*\\{[^}]*verify_signature\\s*:\\s*False)",
+              "flags": [],
+              "description": "PyJWT decode with verification disabled (both old and new PyJWT API)"
+            },
+            {
+              "regex": "jsonwebtoken[^;\\n]*verify[^;\\n]*(?:\\{[^}]*algorithms\\s*:\\s*\\[\\s*\\]|algorithms\\s*:\\s*\\[\\s*[\"']none[\"'])",
+              "flags": [],
+              "description": "Node jsonwebtoken with empty algorithms array or 'none'"
+            },
+            {
+              "regex": "jose\\.jwt\\.decode\\s*\\([^)]*[\"'][\"']\\s*,|python_jose.*algorithms.*none",
+              "flags": ["IGNORECASE"],
+              "description": "python-jose JWT decode with empty secret or 'none' algorithm"
+            }
+          ]
+        }
+      ]
+    },
+
+    "memory_safety": {
+      "description": "Memory safety issues in C/C++ native code",
+      "entities": [
+        {
+          "name": "unsafe_c_functions",
+          "description": "C string/memory functions with no bounds checking",
+          "severity": "critical",
+          "cwe": "CWE-120",
+          "languages": ["c", "cpp"],
+          "patterns": [
+            {
+              "regex": "\\b(?:strcpy|strcat|gets|sprintf|vsprintf|scanf|fscanf|sscanf)\\s*\\(",
+              "flags": [],
+              "description": "Unbounded C string functions: strcpy/strcat/gets/sprintf/scanf"
+            },
+            {
+              "regex": "memcpy\\s*\\([^,]+,\\s*[^,]+,\\s*(?:strlen|sizeof)\\s*\\([^)]+\\)\\s*(?:\\+|\\-|\\*)",
+              "flags": [],
+              "description": "memcpy size calculated with arithmetic on strlen/sizeof (potential overflow)"
+            },
+            {
+              "regex": "\\[[^\\]]*(?:strlen|sizeof)\\s*\\([^)]+\\)\\s*[+\\-]",
+              "flags": [],
+              "description": "Array indexed by string length arithmetic (off-by-one risk)"
+            }
+          ]
+        },
+        {
+          "name": "format_string_vulnerability",
+          "description": "Format string vulnerabilities",
+          "severity": "critical",
+          "cwe": "CWE-134",
+          "languages": ["c", "cpp"],
+          "patterns": [
+            {
+              "regex": "\\b(?:printf|fprintf|sprintf|snprintf|syslog|wprintf)\\s*\\(\\s*[a-zA-Z_][a-zA-Z0-9_]*\\s*(?:,|\\))",
+              "flags": [],
+              "description": "printf-family with non-literal format string variable"
+            }
+          ]
+        }
+      ]
+    },
+
+    "logging_exposure": {
+      "description": "Sensitive data exposure through logging",
+      "entities": [
+        {
+          "name": "sensitive_data_logging",
+          "description": "Logging of passwords, tokens, keys, or PII",
+          "severity": "medium",
+          "cwe": "CWE-532",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "(?:log(?:ger)?\\.|logging\\.|console\\.(?:log|debug|info|warn|error)|print(?:ln)?|System\\.out)\\s*(?:\\.|\\().*(?:password|passwd|secret|token|api_?key|credit_?card|ssn|cvv|private_?key)",
+              "flags": ["IGNORECASE"],
+              "description": "Logging call containing sensitive field name"
+            },
+            {
+              "regex": "(?:log|print|console\\.log)\\s*\\([^)]*(?:request\\.body|req\\.body|request\\.headers|req\\.headers)",
+              "flags": [],
+              "description": "Logging full request body or headers"
+            }
+          ]
+        },
+        {
+          "name": "stack_trace_exposure",
+          "description": "Stack traces or debug info exposed to end users",
+          "severity": "low",
+          "cwe": "CWE-209",
+          "languages": ["all"],
+          "patterns": [
+            {
+              "regex": "traceback\\.print_exc\\s*\\(\\s*\\)|e\\.printStackTrace\\s*\\(\\s*\\)",
+              "flags": [],
+              "description": "Stack trace printed — check it doesn't reach HTTP response"
+            },
+            {
+              "regex": "\\bDEBUG\\s*[=:]\\s*True\\b|\\bdebug\\s*[=:]\\s*true\\b",
+              "flags": [],
+              "description": "Debug mode enabled — may expose stack traces and config in responses"
+            }
+          ]
+        }
+      ]
+    },
+
+    "access_control": {
+      "description": "Authorization and access control vulnerabilities",
+      "entities": [
+        {
+          "name": "idor",
+          "description": "Insecure Direct Object Reference — lookup by user-supplied ID",
+          "severity": "high",
+          "cwe": "CWE-639",
+          "languages": ["python", "javascript", "java"],
+          "patterns": [
+            {
+              "regex": "(?:findById|get_object_or_404|objects\\.get|objects\\.filter)\\s*\\([^)]*(?:request|req|params|args|query)(?:\\.[a-zA-Z_]+)?(?:id|Id|ID)[^a-zA-Z_]",
+              "flags": ["IGNORECASE"],
+              "description": "Direct DB lookup by user-supplied ID without visible authorization check"
+            },
+            {
+              "regex": "\\.find(?:One)?\\s*\\(\\s*\\{\\s*_id\\s*:\\s*(?:req|request|params)\\.",
+              "flags": [],
+              "description": "MongoDB find by user-supplied _id"
+            }
+          ]
+        },
+        {
+          "name": "mass_assignment",
+          "description": "Mass assignment / parameter binding from request body",
+          "severity": "high",
+          "cwe": "CWE-915",
+          "languages": ["javascript", "python", "ruby"],
+          "patterns": [
+            {
+              "regex": "(?:User|Model|Account|Profile|Admin|Role)\\s*\\.\\s*create\\s*\\(\\s*req(?:uest)?\\.body\\s*\\)",
+              "flags": ["IGNORECASE"],
+              "description": "ORM create() called directly with request body"
+            },
+            {
+              "regex": "Object\\.assign\\s*\\([^,]+,\\s*req(?:uest)?\\.(?:body|query|params)\\s*\\)",
+              "flags": [],
+              "description": "Object.assign with request data — may overwrite privileged fields"
+            },
+            {
+              "regex": "(?:model|user|account|profile)\\.__dict__\\.update\\s*\\(",
+              "flags": ["IGNORECASE"],
+              "description": "Python model.__dict__.update() — may allow mass assignment"
+            },
+            {
+              "regex": "(?:update|save)\\s*\\(\\s*\\*\\*request\\.(?:POST|json\\(\\)|form|get_json\\(\\))",
+              "flags": ["IGNORECASE"],
+              "description": "Python ORM update(**request.POST/json) — full request dict unpacked"
+            }
+          ]
+        },
+        {
+          "name": "open_redirect",
+          "description": "Unvalidated redirect using user-supplied URL",
+          "severity": "medium",
+          "cwe": "CWE-601",
+          "languages": ["python", "javascript", "java", "php"],
+          "patterns": [
+            {
+              "regex": "(?:res\\.redirect|response\\.redirect|redirect)\\s*\\([^)]*(?:req\\.|request\\.|params\\.|body\\.|query\\.|\\$_(?:GET|POST|REQUEST))(?:url|next|redirect|return_url|returnUrl|goto|target|destination)(?:[^a-zA-Z_]|$)",
+              "flags": ["IGNORECASE"],
+              "description": "Redirect using user-supplied URL parameter (url/next/returnUrl/goto)"
+            },
+            {
+              "regex": "return\\s+redirect\\s*\\(\\s*request\\.(?:args|form|json|values)\\.get\\s*\\([^)]*(?:url|next|redirect|return|goto)",
+              "flags": ["IGNORECASE"],
+              "description": "Flask redirect using request.args/form.get('next'/'url')"
+            },
+            {
+              "regex": "(?:header|Location)\\s*\\(\\s*[\"']Location:\\s*[\"']\\s*\\.\\s*\\$_(?:GET|POST|REQUEST)",
+              "flags": [],
+              "description": "PHP Location header with user input"
+            }
+          ]
+        }
+      ]
+    },
+
+    "cors_security": {
+      "description": "CORS misconfigurations",
+      "entities": [
+        {
+          "name": "cors_misconfiguration",
+          "description": "Overly permissive or reflected CORS origin",
+          "severity": "medium",
+          "cwe": "CWE-942",
+          "languages": ["python", "javascript", "java"],
+          "patterns": [
+            {
+              "regex": "(?:Access-Control-Allow-Origin|allowedOrigins?|cors_origin)\\s*[=:]\\s*[\"']\\*[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "CORS wildcard allow-origin"
+            },
+            {
+              "regex": "(?:Access-Control-Allow-Credentials|allow_credentials|allowCredentials)\\s*[=:]\\s*(?:true|True|[\"']true[\"'])[\\s\\S]{0,200}(?:Access-Control-Allow-Origin|allow_origin)\\s*[=:]\\s*[\"']\\*[\"']",
+              "flags": ["IGNORECASE"],
+              "description": "CORS credentials=true with wildcard origin (credentials + wildcard is rejected by browsers but indicates misconfiguration intent)"
+            },
+            {
+              "regex": "(?:Access-Control-Allow-Origin|allow_origin|allowedOrigins?)\\s*[=:]\\s*req(?:uest)?\\.(?:headers?|origin|get\\s*\\([\"']origin)",
+              "flags": ["IGNORECASE"],
+              "description": "CORS origin reflected from request header (potential CORS bypass)"
+            }
+          ]
+        }
+      ]
+    },
+
+    "prototype_pollution": {
+      "description": "JavaScript prototype pollution vulnerabilities",
+      "entities": [
+        {
+          "name": "prototype_pollution",
+          "description": "Object prototype or constructor manipulation",
+          "severity": "high",
+          "cwe": "CWE-1321",
+          "languages": ["javascript"],
+          "patterns": [
+            {
+              "regex": "(?:__proto__|constructor\\s*\\.\\s*prototype)\\s*(?:\\[|\\.)\\s*[a-zA-Z_$]",
+              "flags": [],
+              "description": "Direct __proto__ or constructor.prototype property access/assignment"
+            },
+            {
+              "regex": "obj(?:ect)?\\s*\\[\\s*(?:key|prop|attr|field|name)\\s*\\]\\s*=\\s*(?:value|val|data)(?!.*(?:hasOwnProperty|Object\\.prototype\\.hasOwnProperty|Object\\.keys|in\\s+Object))",
+              "flags": ["IGNORECASE"],
+              "description": "Dynamic property assignment without __proto__ / constructor guard check"
+            },
+            {
+              "regex": "(?:merge|extend|deepMerge|deepExtend|assign)\\s*\\([^)]*(?:req\\.|request\\.|body\\.|params\\.|query\\.)",
+              "flags": ["IGNORECASE"],
+              "description": "Recursive merge/extend with user-controlled object (common PP gadget)"
+            }
+          ]
+        }
+      ]
+    },
+
+    "shell_security": {
+      "description": "Shell script security issues",
+      "entities": [
+        {
+          "name": "shell_injection",
+          "description": "Shell script injection and unsafe patterns",
+          "severity": "high",
+          "cwe": "CWE-78",
+          "languages": ["shell", "bash"],
+          "patterns": [
+            {
+              "regex": "\\beval\\s+[\"']?\\$|\\beval\\s+`",
+              "flags": [],
+              "description": "Shell eval with variable expansion or backtick — arbitrary code execution"
+            },
+            {
+              "regex": "curl\\s+[^|\\n]*\\|\\s*(?:bash|sh|zsh|ksh|dash)|wget\\s+[^|\\n]*\\|\\s*(?:bash|sh|zsh)",
+              "flags": [],
+              "description": "curl/wget piped directly to shell — remote code execution"
+            },
+            {
+              "regex": "\\$\\{?(?:[0-9]+|[@*])\\}?(?![^)]*:-)[^;\\n\"']*(?:rm|mv|cp|chmod|chown|dd|mkfs|fdisk)",
+              "flags": [],
+              "description": "Unquoted positional/splat params passed to destructive commands without defaults"
+            }
+          ]
+        },
+        {
+          "name": "insecure_temp_file",
+          "description": "Predictable or race-prone temporary file creation",
+          "severity": "medium",
+          "cwe": "CWE-377",
+          "languages": ["shell"],
+          "patterns": [
+            {
+              "regex": "(?:>|>>)\\s*/tmp/[a-zA-Z][a-zA-Z0-9_]*(?!(?:\\$\\$|\\$RANDOM|`mktemp|\\$\\(mktemp))",
+              "flags": [],
+              "description": "Writing to predictable /tmp filename (use mkstemp or mktemp)"
+            }
+          ]
+        }
+      ]
+    },
+
+    "regex_security": {
+      "description": "Regular expression security issues",
+      "entities": [
+        {
+          "name": "redos",
+          "description": "Regular Expression Denial of Service patterns",
+          "severity": "medium",
+          "cwe": "CWE-1333",
+          "languages": ["all"],
+          "notes": "Low-confidence: many matching patterns are benign. Flag for review rather than auto-block.",
+          "patterns": [
+            {
+              "regex": "re\\.compile\\s*\\([^)]*(?:\\([^)]*[+*]\\)[+*{]|\\([^)]*\\|[^)]*\\)[+*{])",
+              "flags": [],
+              "description": "Python re.compile with nested quantifiers — requires re.compile context to reduce FP"
+            },
+            {
+              "regex": "new\\s+RegExp\\s*\\([^)]*(?:\\([^)]*[+*]\\)[+*]|\\([^)]*\\|[^)]*\\)[+*])",
+              "flags": [],
+              "description": "JavaScript RegExp constructor with nested quantifiers"
+            },
+            {
+              "regex": "Pattern\\.compile\\s*\\([^)]*(?:\\([^)]*[+*]\\)[+*]|\\([^)]*\\|[^)]*\\)[+*])",
+              "flags": [],
+              "description": "Java Pattern.compile with nested quantifiers"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

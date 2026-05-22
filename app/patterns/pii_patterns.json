@@ -1,0 +1,2036 @@
+{
+  "version": "1.0",
+  "description": "API keys, tokens, secrets, URLs, and PII patterns. block_type hard = blocked before model, soft = redacted with warning but passed to model post-redaction.",
+  "regions": {
+    "INDIA": {
+      "description": "India-specific PII patterns governed by DPDPA 2023, IT Act 2000, Aadhaar Act 2016",
+      "entities": [
+        {
+          "name": "AADHAAR_NUMBER",
+          "description": "Indian Aadhaar (12-digit unique identity number)",
+          "block_type": "hard",
+          "replacement": "[AADHAAR_REDACTED]",
+          "block_reason": "Aadhaar number detected",
+          "patterns": [
+            {
+              "regex": "\\b[2-9][0-9]{3}\\s?[0-9]{4}\\s?[0-9]{4}\\b",
+              "flags": [],
+              "description": "Aadhaar 12-digit: starts with 2-9, grouped 4-4-4"
+            },
+            {
+              "regex": "(?:aadhaar|aadhar|UID)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[2-9][0-9]{3}[\\s-]?[0-9]{4}[\\s-]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Aadhaar number"
+            }
+          ]
+        },
+        {
+          "name": "PAN_CARD",
+          "description": "Indian Permanent Account Number (Income Tax)",
+          "block_type": "hard",
+          "replacement": "[PAN_REDACTED]",
+          "block_reason": "PAN card number detected",
+          "patterns": [
+            {
+              "regex": "\\b[A-Z]{3}[ABCFGHLJPT][A-Z][0-9]{4}[A-Z]\\b",
+              "flags": [],
+              "description": "PAN: 5 letters (4th is entity type) + 4 digits + 1 check letter"
+            },
+            {
+              "regex": "(?:PAN|pan\\s*(?:card|no|number))\\s*[:=]?\\s*[A-Z]{3}[ABCFGHLJPT][A-Z][0-9]{4}[A-Z]",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled PAN card number"
+            }
+          ]
+        },
+        {
+          "name": "INDIAN_PASSPORT",
+          "description": "Indian passport number",
+          "block_type": "hard",
+          "replacement": "[PASSPORT_REDACTED]",
+          "block_reason": "Indian passport number detected",
+          "patterns": [
+            {
+              "regex": "\\b[A-Z][0-9]{7}\\b",
+              "flags": [],
+              "description": "Indian passport: 1 letter + 7 digits"
+            },
+            {
+              "regex": "(?:passport)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[A-Z][0-9]{7}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Indian passport"
+            }
+          ]
+        },
+        {
+          "name": "INDIAN_VOTER_ID",
+          "description": "Indian Voter ID (EPIC)",
+          "block_type": "hard",
+          "replacement": "[VOTER_ID_REDACTED]",
+          "block_reason": "Voter ID detected",
+          "patterns": [
+            {
+              "regex": "\\b[A-Z]{3}[0-9]{7}\\b",
+              "flags": [],
+              "description": "Voter ID: 3 letters + 7 digits"
+            }
+          ]
+        },
+        {
+          "name": "INDIAN_DRIVING_LICENSE",
+          "description": "Indian driving license number",
+          "block_type": "hard",
+          "replacement": "[DL_REDACTED]",
+          "block_reason": "Driving license number detected",
+          "patterns": [
+            {
+              "regex": "\\b[A-Z]{2}[0-9]{2}\\s?[0-9]{4}\\s?[0-9]{7}\\b",
+              "flags": [],
+              "description": "DL: State code (2 letters) + RTO code (2 digits) + year (4) + serial (7)"
+            }
+          ]
+        },
+        {
+          "name": "GSTIN",
+          "description": "Indian GST Identification Number",
+          "block_type": "soft",
+          "replacement": "[GSTIN_REDACTED]",
+          "block_reason": "GSTIN detected",
+          "patterns": [
+            {
+              "regex": "\\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]\\b",
+              "flags": [],
+              "description": "GSTIN: 2 state code + PAN (10) + entity + Z + check"
+            }
+          ]
+        },
+        {
+          "name": "UPI_ID",
+          "description": "Indian UPI payment address",
+          "block_type": "soft",
+          "replacement": "[UPI_REDACTED]",
+          "block_reason": "UPI ID detected",
+          "patterns": [
+            {
+              "regex": "[a-zA-Z0-9.\\-_]{2,256}@(?:upi|paytm|oksbi|okicici|okaxis|ybl|ibl|apl|axl|okhdfcbank|freecharge|airtel|jio)",
+              "flags": ["IGNORECASE"],
+              "description": "UPI VPA: username@handle"
+            }
+          ]
+        },
+        {
+          "name": "INDIAN_PHONE",
+          "description": "Indian mobile number",
+          "block_type": "soft",
+          "replacement": "[PHONE_REDACTED]",
+          "block_reason": "Indian phone number detected",
+          "patterns": [
+            {
+              "regex": "(?:\\+91[\\s-]?)?[6-9][0-9]{9}\\b",
+              "flags": [],
+              "description": "Indian mobile: optional +91, starts with 6-9, 10 digits"
+            }
+          ]
+        }
+      ]
+    },
+    "USA": {
+      "description": "US-specific PII patterns governed by CCPA, HIPAA, GLBA, FERPA",
+      "entities": [
+        {
+          "name": "SSN",
+          "description": "US Social Security Number",
+          "block_type": "hard",
+          "replacement": "[SSN_REDACTED]",
+          "block_reason": "Social Security Number detected",
+          "patterns": [
+            {
+              "regex": "\\b(?!000|666|9\\d{2})\\d{3}-(?!00)\\d{2}-(?!0000)\\d{4}\\b",
+              "flags": [],
+              "description": "SSN hyphenated: AAA-BB-CCCC (excludes invalid ranges)"
+            },
+            {
+              "regex": "(?:ssn|social\\s+security)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*(?!000|666|9\\d{2})\\d{3}[\\s-]?(?!00)\\d{2}[\\s-]?(?!0000)\\d{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled SSN"
+            }
+          ]
+        },
+        {
+          "name": "US_PASSPORT",
+          "description": "US passport number",
+          "block_type": "hard",
+          "replacement": "[PASSPORT_REDACTED]",
+          "block_reason": "US passport number detected",
+          "patterns": [
+            {
+              "regex": "(?:passport)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[0-9]{9}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled US passport: 9 digits"
+            }
+          ]
+        },
+        {
+          "name": "US_DRIVERS_LICENSE",
+          "description": "US driver's license number (multi-state)",
+          "block_type": "soft",
+          "replacement": "[DL_REDACTED]",
+          "block_reason": "Possible US driver's license detected",
+          "patterns": [
+            {
+              "regex": "(?:driver'?s?\\s+licen[sc]e|DL)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[A-Z0-9]{5,15}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled US driver's license (format varies by state)"
+            }
+          ]
+        },
+        {
+          "name": "US_EIN",
+          "description": "US Employer Identification Number",
+          "block_type": "soft",
+          "replacement": "[EIN_REDACTED]",
+          "block_reason": "EIN detected",
+          "patterns": [
+            {
+              "regex": "(?:EIN|employer\\s+identification)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[0-9]{2}-[0-9]{7}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled EIN: XX-XXXXXXX"
+            }
+          ]
+        },
+        {
+          "name": "US_ITIN",
+          "description": "US Individual Taxpayer Identification Number",
+          "block_type": "hard",
+          "replacement": "[ITIN_REDACTED]",
+          "block_reason": "ITIN detected",
+          "patterns": [
+            {
+              "regex": "\\b9\\d{2}-[7-9]\\d-\\d{4}\\b",
+              "flags": [],
+              "description": "ITIN: 9XX-7X/8X/9X-XXXX format"
+            }
+          ]
+        },
+        {
+          "name": "US_PHONE",
+          "description": "US phone number",
+          "block_type": "soft",
+          "replacement": "[PHONE_REDACTED]",
+          "block_reason": "US phone number detected",
+          "patterns": [
+            {
+              "regex": "(?:\\+1[\\s.-]?)?\\(?[2-9]\\d{2}\\)?[\\s.-]?[2-9]\\d{2}[\\s.-]?\\d{4}\\b",
+              "flags": [],
+              "description": "US phone: +1 (XXX) XXX-XXXX or variants"
+            }
+          ]
+        }
+      ]
+    },
+    "UK": {
+      "description": "UK-specific PII patterns governed by UK GDPR, Data Protection Act 2018",
+      "entities": [
+        {
+          "name": "NHS_NUMBER",
+          "description": "UK National Health Service number",
+          "block_type": "hard",
+          "replacement": "[NHS_REDACTED]",
+          "block_reason": "NHS number detected",
+          "patterns": [
+            {
+              "regex": "\\b[0-9]{3}\\s?[0-9]{3}\\s?[0-9]{4}\\b",
+              "flags": [],
+              "description": "NHS number: 10 digits, grouped 3-3-4"
+            },
+            {
+              "regex": "(?:NHS)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[0-9]{3}[\\s-]?[0-9]{3}[\\s-]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled NHS number"
+            }
+          ]
+        },
+        {
+          "name": "UK_NINO",
+          "description": "UK National Insurance Number",
+          "block_type": "hard",
+          "replacement": "[NINO_REDACTED]",
+          "block_reason": "National Insurance Number detected",
+          "patterns": [
+            {
+              "regex": "\\b(?!BG|GB|NK|KN|TN|NT|ZZ)[A-Z]{2}\\s?[0-9]{2}\\s?[0-9]{2}\\s?[0-9]{2}\\s?[A-D]\\b",
+              "flags": [],
+              "description": "NI Number: 2 letters + 6 digits + 1 suffix letter (A-D)"
+            }
+          ]
+        },
+        {
+          "name": "UK_PASSPORT",
+          "description": "UK passport number",
+          "block_type": "hard",
+          "replacement": "[PASSPORT_REDACTED]",
+          "block_reason": "UK passport number detected",
+          "patterns": [
+            {
+              "regex": "(?:passport)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[0-9]{9}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled UK passport: 9 digits"
+            }
+          ]
+        },
+        {
+          "name": "UK_PHONE",
+          "description": "UK phone number",
+          "block_type": "soft",
+          "replacement": "[PHONE_REDACTED]",
+          "block_reason": "UK phone number detected",
+          "patterns": [
+            {
+              "regex": "(?:\\+44[\\s-]?|0)(?:7[0-9]{3}|[1-9][0-9]{2,3})[\\s-]?[0-9]{3,4}[\\s-]?[0-9]{3,4}\\b",
+              "flags": [],
+              "description": "UK phone: +44/0 prefix, mobile or landline"
+            }
+          ]
+        }
+      ]
+    },
+    "EUROPE": {
+      "description": "EU/EEA PII patterns governed by GDPR",
+      "entities": [
+        {
+          "name": "IBAN",
+          "description": "International Bank Account Number",
+          "block_type": "hard",
+          "replacement": "[IBAN_REDACTED]",
+          "block_reason": "IBAN detected",
+          "patterns": [
+            {
+              "regex": "\\b[A-Z]{2}[0-9]{2}\\s?[A-Z0-9]{4}\\s?[A-Z0-9]{4}\\s?[A-Z0-9]{4}(?:\\s?[A-Z0-9]{4}){0,5}(?:\\s?[A-Z0-9]{1,4})?\\b",
+              "flags": [],
+              "description": "IBAN: country code (2) + check digits (2) + up to 30 BBAN chars"
+            }
+          ]
+        },
+        {
+          "name": "EU_VAT_ID",
+          "description": "EU VAT identification number",
+          "block_type": "soft",
+          "replacement": "[VAT_REDACTED]",
+          "block_reason": "EU VAT ID detected",
+          "patterns": [
+            {
+              "regex": "\\b(?:AT|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|FR|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK)[A-Z0-9]{8,12}\\b",
+              "flags": [],
+              "description": "EU VAT: 2-letter country prefix + 8-12 alphanumeric chars"
+            }
+          ]
+        },
+        {
+          "name": "EU_PASSPORT",
+          "description": "EU/EEA passport number (labeled only)",
+          "block_type": "hard",
+          "replacement": "[PASSPORT_REDACTED]",
+          "block_reason": "EU passport number detected",
+          "patterns": [
+            {
+              "regex": "(?:passport)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[A-Z0-9]{6,9}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled EU passport number"
+            }
+          ]
+        },
+        {
+          "name": "GERMAN_ID",
+          "description": "German Personalausweis (ID card) number",
+          "block_type": "hard",
+          "replacement": "[DE_ID_REDACTED]",
+          "block_reason": "German ID card number detected",
+          "patterns": [
+            {
+              "regex": "\\b[CFGHJKLMNPRTVWXYZ0-9][0-9]{2}[CFGHJKLMNPRTVWXYZ0-9]{6}[0-9]\\b",
+              "flags": [],
+              "description": "German Personalausweis: 10 alphanumeric (restricted charset)"
+            }
+          ]
+        }
+      ]
+    },
+    "AUSTRALIA": {
+      "description": "Australia-specific PII governed by Privacy Act 1988, APPs",
+      "entities": [
+        {
+          "name": "AU_TFN",
+          "description": "Australian Tax File Number",
+          "block_type": "hard",
+          "replacement": "[TFN_REDACTED]",
+          "block_reason": "Tax File Number detected",
+          "patterns": [
+            {
+              "regex": "\\b[0-9]{3}\\s?[0-9]{3}\\s?[0-9]{3}\\b",
+              "flags": [],
+              "description": "TFN: 9 digits, grouped 3-3-3"
+            },
+            {
+              "regex": "(?:TFN|tax\\s+file\\s+number)\\s*[:=]?\\s*[0-9]{3}[\\s-]?[0-9]{3}[\\s-]?[0-9]{3}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled TFN"
+            }
+          ]
+        },
+        {
+          "name": "AU_MEDICARE",
+          "description": "Australian Medicare card number",
+          "block_type": "hard",
+          "replacement": "[MEDICARE_REDACTED]",
+          "block_reason": "Medicare number detected",
+          "patterns": [
+            {
+              "regex": "\\b[2-6][0-9]{3}\\s?[0-9]{5}\\s?[0-9](?:\\s?[0-9])?\\b",
+              "flags": [],
+              "description": "Medicare: 10-11 digits, starts with 2-6"
+            }
+          ]
+        },
+        {
+          "name": "AU_PASSPORT",
+          "description": "Australian passport number",
+          "block_type": "hard",
+          "replacement": "[PASSPORT_REDACTED]",
+          "block_reason": "Australian passport number detected",
+          "patterns": [
+            {
+              "regex": "(?:passport)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*[A-Z][A-Z0-9]{7}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled AU passport: letter + 7 alphanumeric"
+            }
+          ]
+        }
+      ]
+    },
+    "GLOBAL": {
+      "description": "Universal PII patterns applied regardless of region",
+      "entities": [
+        {
+          "name": "EMAIL_ADDRESS",
+          "description": "Email address",
+          "block_type": "soft",
+          "replacement": "[EMAIL_REDACTED]",
+          "block_reason": "Email address detected",
+          "patterns": [
+            {
+              "regex": "\\b[A-Za-z0-9._%+\\-]{2,64}@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}\\b",
+              "flags": [],
+              "description": "Standard email format"
+            }
+          ]
+        },
+        {
+          "name": "IP_ADDRESS",
+          "description": "IPv4 address",
+          "block_type": "soft",
+          "replacement": "[IP_REDACTED]",
+          "block_reason": "IP address detected",
+          "patterns": [
+            {
+              "regex": "\\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\b",
+              "flags": [],
+              "description": "IPv4 dotted-decimal notation"
+            }
+          ]
+        },
+        {
+          "name": "DATE_OF_BIRTH",
+          "description": "Date of birth (labeled only)",
+          "block_type": "soft",
+          "replacement": "[DOB_REDACTED]",
+          "block_reason": "Date of birth detected",
+          "patterns": [
+            {
+              "regex": "(?:date\\s+of\\s+birth|DOB|d\\.?o\\.?b\\.?)\\s*[:=]?\\s*(?:\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{2,4}|\\d{4}[/\\-.]\\d{1,2}[/\\-.]\\d{1,2})",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled date of birth in common formats"
+            }
+          ]
+        },
+        {
+          "name": "PERSON_NAME_LABELED",
+          "description": "Person's full name (labeled context only)",
+          "block_type": "soft",
+          "replacement": "[NAME_REDACTED]",
+          "block_reason": "Person name detected",
+          "patterns": [
+            {
+              "regex": "(?:full\\s+name|first\\s*(?:&|and)?\\s*last\\s+name|patient\\s+name|applicant\\s+name|beneficiary)\\s*[:=]?\\s*[A-Z][a-z]+(?:\\s+[A-Z][a-z]+){1,3}",
+              "flags": [],
+              "description": "Labeled person name: requires context label before name"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "categories": {
+    "CLOUD_PROVIDERS": {
+      "entities": [
+        {
+          "name": "AWS_ACCESS_KEY",
+          "description": "AWS IAM Access Key ID",
+          "block_type": "hard",
+          "replacement": "[AWS_ACCESS_KEY_REDACTED]",
+          "block_reason": "AWS Access Key ID detected",
+          "patterns": [
+            {
+              "regex": "\\bAKIA[0-9A-Z]{16}\\b",
+              "flags": [],
+              "description": "Long-term IAM access key: AKIA + 16 uppercase alphanumeric"
+            },
+            {
+              "regex": "\\bASIA[0-9A-Z]{16}\\b",
+              "flags": [],
+              "description": "Short-term STS session key: ASIA + 16 uppercase alphanumeric"
+            },
+            {
+              "regex": "\\bAIDA[0-9A-Z]{16}\\b",
+              "flags": [],
+              "description": "IAM user/role ID: AIDA prefix"
+            },
+            {
+              "regex": "\\bARO[A-Z][0-9A-Z]{16}\\b",
+              "flags": [],
+              "description": "IAM role ID: ARO prefix"
+            },
+            {
+              "regex": "\\bANPA[0-9A-Z]{16}\\b",
+              "flags": [],
+              "description": "AWS managed policy ID: ANPA prefix"
+            }
+          ]
+        },
+        {
+          "name": "AWS_SECRET_KEY",
+          "description": "AWS IAM Secret Access Key",
+          "block_type": "soft",
+          "replacement": "[AWS_SECRET_KEY_REDACTED]",
+          "block_reason": "Possible AWS Secret Access Key detected",
+          "patterns": [
+            {
+              "regex": "(?:aws_secret(?:_access)?_key|aws_secret|secret_access_key)\\s*[:=]\\s*[A-Za-z0-9/+]{40}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled AWS secret key: 40-char base64-ish string"
+            }
+          ]
+        },
+        {
+          "name": "AWS_MWS_KEY",
+          "description": "AWS Marketplace Web Service key",
+          "block_type": "hard",
+          "replacement": "[AWS_MWS_KEY_REDACTED]",
+          "block_reason": "AWS MWS key detected",
+          "patterns": [
+            {
+              "regex": "amzn\\.mws\\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+              "flags": ["IGNORECASE"],
+              "description": "AWS MWS key: amzn.mws. + UUID format"
+            }
+          ]
+        },
+        {
+          "name": "GCP_API_KEY",
+          "description": "Google Cloud / GCP API Key",
+          "block_type": "hard",
+          "replacement": "[GCP_API_KEY_REDACTED]",
+          "block_reason": "Google Cloud API key detected",
+          "patterns": [
+            {
+              "regex": "\\bAIza[0-9A-Za-z\\-_]{35}\\b",
+              "flags": [],
+              "description": "GCP API key: AIza + 35 chars"
+            }
+          ]
+        },
+        {
+          "name": "GCP_SERVICE_ACCOUNT",
+          "description": "Google Cloud service account credential",
+          "block_type": "hard",
+          "replacement": "[GCP_SA_REDACTED]",
+          "block_reason": "Google Cloud service account credential detected",
+          "patterns": [
+            {
+              "regex": "\"type\"\\s*:\\s*\"service_account\"",
+              "flags": [],
+              "description": "GCP service account JSON marker"
+            },
+            {
+              "regex": "[a-z0-9\\-]+@[a-z0-9\\-]+\\.iam\\.gserviceaccount\\.com",
+              "flags": ["IGNORECASE"],
+              "description": "GCP service account email format"
+            }
+          ]
+        },
+        {
+          "name": "GCP_OAUTH_TOKEN",
+          "description": "Google OAuth2 access/refresh token",
+          "block_type": "hard",
+          "replacement": "[GCP_TOKEN_REDACTED]",
+          "block_reason": "Google OAuth token detected",
+          "patterns": [
+            {
+              "regex": "\\bya29\\.[0-9A-Za-z\\-_]{20,}",
+              "flags": [],
+              "description": "Google OAuth2 access token: ya29. prefix"
+            },
+            {
+              "regex": "1\\/\\/[0-9A-Za-z\\-_]{20,}",
+              "flags": [],
+              "description": "Google OAuth2 refresh token: 1// prefix"
+            }
+          ]
+        },
+        {
+          "name": "AZURE_CLIENT_SECRET",
+          "description": "Azure AD client secret / app password",
+          "block_type": "soft",
+          "replacement": "[AZURE_SECRET_REDACTED]",
+          "block_reason": "Possible Azure client secret detected",
+          "patterns": [
+            {
+              "regex": "(?:client_secret|AZURE_CLIENT_SECRET)\\s*[:=]\\s*[A-Za-z0-9~._\\-]{34,40}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Azure client secret"
+            }
+          ]
+        },
+        {
+          "name": "AZURE_STORAGE_KEY",
+          "description": "Azure Storage account key",
+          "block_type": "hard",
+          "replacement": "[AZURE_STORAGE_KEY_REDACTED]",
+          "block_reason": "Azure Storage key detected",
+          "patterns": [
+            {
+              "regex": "DefaultEndpointsProtocol=https?;AccountName=[^;]+;AccountKey=[A-Za-z0-9+/=]{88};",
+              "flags": ["IGNORECASE"],
+              "description": "Azure Storage connection string with AccountKey"
+            },
+            {
+              "regex": "(?:AccountKey|AZURE_STORAGE_KEY)\\s*[:=]\\s*[A-Za-z0-9+/]{86}==",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Azure storage key: 88-char base64"
+            }
+          ]
+        },
+        {
+          "name": "AZURE_SAS_TOKEN",
+          "description": "Azure Shared Access Signature token",
+          "block_type": "hard",
+          "replacement": "[AZURE_SAS_REDACTED]",
+          "block_reason": "Azure SAS token detected",
+          "patterns": [
+            {
+              "regex": "(?:sv|sig|se|sp|sr|spr)=[^&\"\\s]{1,200}&(?:sv|sig|se|sp|sr|spr)=",
+              "flags": ["IGNORECASE"],
+              "description": "Azure SAS token query string parameters"
+            }
+          ]
+        },
+        {
+          "name": "DIGITALOCEAN_TOKEN",
+          "description": "DigitalOcean personal access token",
+          "block_type": "hard",
+          "replacement": "[DO_TOKEN_REDACTED]",
+          "block_reason": "DigitalOcean access token detected",
+          "patterns": [
+            {
+              "regex": "\\bdop_v1_[a-f0-9]{64}\\b",
+              "flags": [],
+              "description": "DigitalOcean personal access token: dop_v1_ + 64 hex chars"
+            }
+          ]
+        },
+        {
+          "name": "DIGITALOCEAN_SPACES_KEY",
+          "description": "DigitalOcean Spaces access key",
+          "block_type": "soft",
+          "replacement": "[DO_SPACES_KEY_REDACTED]",
+          "block_reason": "Possible DigitalOcean Spaces key detected",
+          "patterns": [
+            {
+              "regex": "(?:DO_SPACES_(?:ACCESS_)?KEY|SPACES_KEY)\\s*[:=]\\s*[A-Z0-9]{20}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled DO Spaces key: 20 uppercase alphanumeric"
+            }
+          ]
+        },
+        {
+          "name": "CLOUDFLARE_API_KEY",
+          "description": "Cloudflare Global API key or API token",
+          "block_type": "soft",
+          "replacement": "[CF_KEY_REDACTED]",
+          "block_reason": "Possible Cloudflare API key detected",
+          "patterns": [
+            {
+              "regex": "(?:X-Auth-Key|cloudflare(?:_api)?_key|CF_API_KEY)\\s*[:=]\\s*[0-9a-f]{37}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Cloudflare Global API key"
+            },
+            {
+              "regex": "(?:CF_API_TOKEN|cloudflare(?:_api)?_token)\\s*[:=]\\s*[A-Za-z0-9_\\-]{40}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Cloudflare API token"
+            }
+          ]
+        },
+        {
+          "name": "HEROKU_API_KEY",
+          "description": "Heroku API key",
+          "block_type": "hard",
+          "replacement": "[HEROKU_KEY_REDACTED]",
+          "block_reason": "Heroku API key detected",
+          "patterns": [
+            {
+              "regex": "(?:heroku(?:_api)?_key|HEROKU_API_KEY)\\s*[:=]\\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Heroku API key: UUID format"
+            }
+          ]
+        }
+      ]
+    },
+    "AI_ML_PROVIDERS": {
+      "entities": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Anthropic Claude API key",
+          "block_type": "hard",
+          "replacement": "[ANTHROPIC_KEY_REDACTED]",
+          "block_reason": "Anthropic API key detected",
+          "patterns": [
+            {
+              "regex": "\\bsk-ant-(?:api03-)?[A-Za-z0-9\\-_]{93,}\\b",
+              "flags": [],
+              "description": "Anthropic API key: sk-ant- or sk-ant-api03- prefix, 93+ chars total"
+            }
+          ]
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "OpenAI API key",
+          "block_type": "hard",
+          "replacement": "[OPENAI_KEY_REDACTED]",
+          "block_reason": "OpenAI API key detected",
+          "patterns": [
+            {
+              "regex": "\\bsk-[A-Za-z0-9]{48}\\b",
+              "flags": [],
+              "description": "OpenAI legacy key: sk- + 48 alphanumeric chars"
+            },
+            {
+              "regex": "\\bsk-proj-[A-Za-z0-9\\-_]{100,}\\b",
+              "flags": [],
+              "description": "OpenAI project-scoped key: sk-proj- prefix"
+            },
+            {
+              "regex": "\\bsk-svcacct-[A-Za-z0-9\\-_]{100,}\\b",
+              "flags": [],
+              "description": "OpenAI service account key: sk-svcacct- prefix"
+            }
+          ]
+        },
+        {
+          "name": "HUGGINGFACE_TOKEN",
+          "description": "HuggingFace API / access token",
+          "block_type": "hard",
+          "replacement": "[HF_TOKEN_REDACTED]",
+          "block_reason": "HuggingFace token detected",
+          "patterns": [
+            {
+              "regex": "\\bhf_[A-Za-z0-9]{34,}\\b",
+              "flags": [],
+              "description": "HuggingFace user access token: hf_ prefix + 34+ chars"
+            },
+            {
+              "regex": "\\bapi_org_[A-Za-z0-9]{34,}\\b",
+              "flags": [],
+              "description": "HuggingFace org token: api_org_ prefix"
+            }
+          ]
+        },
+        {
+          "name": "COHERE_API_KEY",
+          "description": "Cohere API key",
+          "block_type": "soft",
+          "replacement": "[COHERE_KEY_REDACTED]",
+          "block_reason": "Possible Cohere API key detected",
+          "patterns": [
+            {
+              "regex": "(?:cohere(?:_api)?_key|CO_API_KEY)\\s*[:=]\\s*[A-Za-z0-9]{40}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Cohere API key"
+            }
+          ]
+        },
+        {
+          "name": "MISTRAL_API_KEY",
+          "description": "Mistral AI API key",
+          "block_type": "hard",
+          "replacement": "[MISTRAL_KEY_REDACTED]",
+          "block_reason": "Mistral API key detected",
+          "patterns": [
+            {
+              "regex": "(?:mistral(?:_api)?_key|MISTRAL_API_KEY)\\s*[:=]\\s*[A-Za-z0-9]{32,}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Mistral API key: 32+ alphanumeric chars"
+            }
+          ]
+        },
+        {
+          "name": "REPLICATE_API_KEY",
+          "description": "Replicate API token",
+          "block_type": "hard",
+          "replacement": "[REPLICATE_KEY_REDACTED]",
+          "block_reason": "Replicate API token detected",
+          "patterns": [
+            {
+              "regex": "\\br8_[A-Za-z0-9]{37}\\b",
+              "flags": [],
+              "description": "Replicate API token: r8_ + 37 alphanumeric chars"
+            }
+          ]
+        },
+        {
+          "name": "STABILITY_AI_KEY",
+          "description": "Stability AI API key",
+          "block_type": "soft",
+          "replacement": "[STABILITY_KEY_REDACTED]",
+          "block_reason": "Possible Stability AI API key detected",
+          "patterns": [
+            {
+              "regex": "(?:stability(?:_ai)?_key|STABILITY_API_KEY)\\s*[:=]\\s*sk-[A-Za-z0-9]{48}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Stability AI key"
+            }
+          ]
+        },
+        {
+          "name": "TOGETHER_AI_KEY",
+          "description": "Together AI API key",
+          "block_type": "hard",
+          "replacement": "[TOGETHER_KEY_REDACTED]",
+          "block_reason": "Together AI API key detected",
+          "patterns": [
+            {
+              "regex": "(?:together(?:_ai)?_(?:api_)?key|TOGETHER_API_KEY)\\s*[:=]\\s*[a-f0-9]{64}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Together AI key: 64 hex chars"
+            }
+          ]
+        },
+        {
+          "name": "PERPLEXITY_API_KEY",
+          "description": "Perplexity AI API key",
+          "block_type": "hard",
+          "replacement": "[PERPLEXITY_KEY_REDACTED]",
+          "block_reason": "Perplexity API key detected",
+          "patterns": [
+            {
+              "regex": "\\bpplx-[A-Za-z0-9]{48}\\b",
+              "flags": [],
+              "description": "Perplexity API key: pplx- + 48 alphanumeric chars"
+            }
+          ]
+        },
+        {
+          "name": "GROQ_API_KEY",
+          "description": "Groq API key",
+          "block_type": "hard",
+          "replacement": "[GROQ_KEY_REDACTED]",
+          "block_reason": "Groq API key detected",
+          "patterns": [
+            {
+              "regex": "\\bgsk_[A-Za-z0-9]{52}\\b",
+              "flags": [],
+              "description": "Groq API key: gsk_ + 52 alphanumeric chars"
+            }
+          ]
+        }
+      ]
+    },
+    "PAYMENT_PROVIDERS": {
+      "entities": [
+        {
+          "name": "STRIPE_KEY",
+          "description": "Stripe API key (secret or publishable)",
+          "block_type": "hard",
+          "replacement": "[STRIPE_KEY_REDACTED]",
+          "block_reason": "Stripe API key detected",
+          "patterns": [
+            {
+              "regex": "\\bsk_live_[A-Za-z0-9]{24,}\\b",
+              "flags": [],
+              "description": "Stripe live secret key: sk_live_ prefix"
+            },
+            {
+              "regex": "\\bsk_test_[A-Za-z0-9]{24,}\\b",
+              "flags": [],
+              "description": "Stripe test secret key: sk_test_ prefix"
+            },
+            {
+              "regex": "\\bpk_live_[A-Za-z0-9]{24,}\\b",
+              "flags": [],
+              "description": "Stripe live publishable key: pk_live_ prefix"
+            },
+            {
+              "regex": "\\bpk_test_[A-Za-z0-9]{24,}\\b",
+              "flags": [],
+              "description": "Stripe test publishable key: pk_test_ prefix"
+            },
+            {
+              "regex": "\\brk_live_[A-Za-z0-9]{24,}\\b",
+              "flags": [],
+              "description": "Stripe live restricted key: rk_live_ prefix"
+            },
+            {
+              "regex": "\\brk_test_[A-Za-z0-9]{24,}\\b",
+              "flags": [],
+              "description": "Stripe test restricted key: rk_test_ prefix"
+            },
+            {
+              "regex": "\\bwhsec_[A-Za-z0-9]{32,}\\b",
+              "flags": [],
+              "description": "Stripe webhook signing secret: whsec_ prefix"
+            }
+          ]
+        },
+        {
+          "name": "RAZORPAY_KEY",
+          "description": "Razorpay API key",
+          "block_type": "hard",
+          "replacement": "[RAZORPAY_KEY_REDACTED]",
+          "block_reason": "Razorpay API key detected",
+          "patterns": [
+            {
+              "regex": "\\brzp_live_[A-Za-z0-9]{14,}\\b",
+              "flags": [],
+              "description": "Razorpay live key: rzp_live_ prefix"
+            },
+            {
+              "regex": "\\brzp_test_[A-Za-z0-9]{14,}\\b",
+              "flags": [],
+              "description": "Razorpay test key: rzp_test_ prefix"
+            }
+          ]
+        },
+        {
+          "name": "PAYPAL_KEY",
+          "description": "PayPal client ID or secret",
+          "block_type": "hard",
+          "replacement": "[PAYPAL_KEY_REDACTED]",
+          "block_reason": "PayPal API credential detected",
+          "patterns": [
+            {
+              "regex": "(?:paypal(?:_client)?_(?:id|secret)|PAYPAL_CLIENT_(?:ID|SECRET))\\s*[:=]\\s*[A-Za-z0-9\\-_]{30,80}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled PayPal client ID or secret"
+            }
+          ]
+        },
+        {
+          "name": "BRAINTREE_KEY",
+          "description": "Braintree (PayPal) access token / key",
+          "block_type": "hard",
+          "replacement": "[BRAINTREE_KEY_REDACTED]",
+          "block_reason": "Braintree API key detected",
+          "patterns": [
+            {
+              "regex": "\\baccess_token\\$production\\$[a-z0-9]{16}\\$[a-f0-9]{32}\\b",
+              "flags": [],
+              "description": "Braintree production access token"
+            },
+            {
+              "regex": "\\baccess_token\\$sandbox\\$[a-z0-9]{16}\\$[a-f0-9]{32}\\b",
+              "flags": [],
+              "description": "Braintree sandbox access token"
+            }
+          ]
+        },
+        {
+          "name": "SQUARE_KEY",
+          "description": "Square payment API key / access token",
+          "block_type": "hard",
+          "replacement": "[SQUARE_KEY_REDACTED]",
+          "block_reason": "Square API key detected",
+          "patterns": [
+            {
+              "regex": "\\bEAAA[A-Za-z0-9]{60,}\\b",
+              "flags": [],
+              "description": "Square production access token: EAAA prefix"
+            },
+            {
+              "regex": "\\bsandbox-sq0[a-z]{3}-[A-Za-z0-9\\-_]{22,}\\b",
+              "flags": [],
+              "description": "Square sandbox application token"
+            },
+            {
+              "regex": "\\bsq0[a-z]{3}-[A-Za-z0-9\\-_]{22,}\\b",
+              "flags": [],
+              "description": "Square application key: sq0 + 3 letters prefix"
+            }
+          ]
+        },
+        {
+          "name": "SHOPIFY_KEY",
+          "description": "Shopify API key or access token",
+          "block_type": "hard",
+          "replacement": "[SHOPIFY_KEY_REDACTED]",
+          "block_reason": "Shopify API credential detected",
+          "patterns": [
+            {
+              "regex": "\\bshpss_[a-fA-F0-9]{32}\\b",
+              "flags": [],
+              "description": "Shopify shared secret: shpss_ + 32 hex"
+            },
+            {
+              "regex": "\\bshpat_[a-fA-F0-9]{32}\\b",
+              "flags": [],
+              "description": "Shopify access token: shpat_ + 32 hex"
+            },
+            {
+              "regex": "\\bshpca_[a-fA-F0-9]{32}\\b",
+              "flags": [],
+              "description": "Shopify custom app access token: shpca_ prefix"
+            },
+            {
+              "regex": "\\bshppa_[a-fA-F0-9]{32}\\b",
+              "flags": [],
+              "description": "Shopify partner API token: shppa_ prefix"
+            }
+          ]
+        },
+        {
+          "name": "PAYTM_KEY",
+          "description": "Paytm merchant key",
+          "block_type": "hard",
+          "replacement": "[PAYTM_KEY_REDACTED]",
+          "block_reason": "Paytm merchant key detected",
+          "patterns": [
+            {
+              "regex": "(?:paytm(?:_merchant)?_(?:key|secret)|PAYTM_MERCHANT_KEY)\\s*[:=]\\s*[A-Za-z0-9@#]{16,32}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Paytm merchant key: 16-32 alphanumeric chars"
+            }
+          ]
+        },
+        {
+          "name": "CASHFREE_KEY",
+          "description": "Cashfree API key and secret",
+          "block_type": "hard",
+          "replacement": "[CASHFREE_KEY_REDACTED]",
+          "block_reason": "Cashfree API credential detected",
+          "patterns": [
+            {
+              "regex": "(?:cashfree(?:_api)?_(?:key|secret|id)|CASHFREE_(?:APP_ID|SECRET_KEY))\\s*[:=]\\s*[A-Za-z0-9]{20,50}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Cashfree app ID or secret key"
+            }
+          ]
+        },
+        {
+          "name": "PHONEPE_KEY",
+          "description": "PhonePe merchant key",
+          "block_type": "hard",
+          "replacement": "[PHONEPE_KEY_REDACTED]",
+          "block_reason": "PhonePe merchant key detected",
+          "patterns": [
+            {
+              "regex": "(?:phonepe(?:_merchant)?_(?:key|secret)|PHONEPE_(?:MERCHANT_KEY|SALT_KEY))\\s*[:=]\\s*[A-Za-z0-9\\-]{20,50}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled PhonePe merchant key or salt key"
+            }
+          ]
+        },
+        {
+          "name": "ADYEN_KEY",
+          "description": "Adyen API key",
+          "block_type": "hard",
+          "replacement": "[ADYEN_KEY_REDACTED]",
+          "block_reason": "Adyen API key detected",
+          "patterns": [
+            {
+              "regex": "\\bAQE[a-zA-Z0-9+/]{96,}={0,2}\\b",
+              "flags": [],
+              "description": "Adyen API key: AQE prefix + base64 encoded key"
+            }
+          ]
+        },
+        {
+          "name": "PAYSTACK_KEY",
+          "description": "Paystack API key",
+          "block_type": "hard",
+          "replacement": "[PAYSTACK_KEY_REDACTED]",
+          "block_reason": "Paystack API key detected",
+          "patterns": [
+            {
+              "regex": "\\bsk_live_[A-Za-z0-9]{40}\\b",
+              "flags": [],
+              "description": "Paystack live secret key: sk_live_ + 40 chars"
+            },
+            {
+              "regex": "\\bsk_test_[A-Za-z0-9]{40}\\b",
+              "flags": [],
+              "description": "Paystack test secret key: sk_test_ + 40 chars"
+            },
+            {
+              "regex": "\\bpk_live_[A-Za-z0-9]{40}\\b",
+              "flags": [],
+              "description": "Paystack live publishable key"
+            },
+            {
+              "regex": "\\bpk_test_[A-Za-z0-9]{40}\\b",
+              "flags": [],
+              "description": "Paystack test publishable key"
+            }
+          ]
+        }
+      ]
+    },
+    "DEVELOPER_TOOLS": {
+      "entities": [
+        {
+          "name": "GITHUB_TOKEN",
+          "description": "GitHub personal access token or app token",
+          "block_type": "hard",
+          "replacement": "[GITHUB_TOKEN_REDACTED]",
+          "block_reason": "GitHub token detected",
+          "patterns": [
+            {
+              "regex": "\\bghp_[A-Za-z0-9]{36,}\\b",
+              "flags": [],
+              "description": "GitHub personal access token (classic): ghp_ prefix"
+            },
+            {
+              "regex": "\\bgho_[A-Za-z0-9]{36,}\\b",
+              "flags": [],
+              "description": "GitHub OAuth token: gho_ prefix"
+            },
+            {
+              "regex": "\\bghu_[A-Za-z0-9]{36,}\\b",
+              "flags": [],
+              "description": "GitHub user-to-server token: ghu_ prefix"
+            },
+            {
+              "regex": "\\bghs_[A-Za-z0-9]{36,}\\b",
+              "flags": [],
+              "description": "GitHub server-to-server token: ghs_ prefix"
+            },
+            {
+              "regex": "\\bghr_[A-Za-z0-9]{36,}\\b",
+              "flags": [],
+              "description": "GitHub refresh token: ghr_ prefix"
+            },
+            {
+              "regex": "\\bgithub_pat_[A-Za-z0-9_]{82,}\\b",
+              "flags": [],
+              "description": "GitHub fine-grained PAT: github_pat_ prefix"
+            }
+          ]
+        },
+        {
+          "name": "GITLAB_TOKEN",
+          "description": "GitLab personal or project access token",
+          "block_type": "hard",
+          "replacement": "[GITLAB_TOKEN_REDACTED]",
+          "block_reason": "GitLab token detected",
+          "patterns": [
+            {
+              "regex": "\\bglpat-[A-Za-z0-9\\-_]{20}\\b",
+              "flags": [],
+              "description": "GitLab personal access token: glpat- + 20 chars"
+            },
+            {
+              "regex": "\\bglptt-[A-Za-z0-9\\-_]{20}\\b",
+              "flags": [],
+              "description": "GitLab project trigger token: glptt- prefix"
+            },
+            {
+              "regex": "\\bGR1348941[A-Za-z0-9\\-_]{20}\\b",
+              "flags": [],
+              "description": "GitLab runner registration token"
+            }
+          ]
+        },
+        {
+          "name": "BITBUCKET_TOKEN",
+          "description": "Bitbucket app password or access token",
+          "block_type": "hard",
+          "replacement": "[BITBUCKET_TOKEN_REDACTED]",
+          "block_reason": "Bitbucket token detected",
+          "patterns": [
+            {
+              "regex": "(?:bitbucket(?:_app)?_(?:password|token)|BITBUCKET_(?:APP_PASSWORD|TOKEN))\\s*[:=]\\s*[A-Za-z0-9]{20,}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Bitbucket app password or token"
+            }
+          ]
+        },
+        {
+          "name": "SLACK_TOKEN",
+          "description": "Slack bot, user, or app token",
+          "block_type": "hard",
+          "replacement": "[SLACK_TOKEN_REDACTED]",
+          "block_reason": "Slack token detected",
+          "patterns": [
+            {
+              "regex": "\\bxoxb-[0-9]{11,13}-[0-9]{11,13}-[A-Za-z0-9]{24}\\b",
+              "flags": [],
+              "description": "Slack bot token: xoxb- prefix"
+            },
+            {
+              "regex": "\\bxoxp-[0-9]{11,13}-[0-9]{11,13}-[0-9]{11,13}-[A-Za-z0-9]{32}\\b",
+              "flags": [],
+              "description": "Slack user token: xoxp- prefix"
+            },
+            {
+              "regex": "\\bxoxa-[0-9]{11,13}-[0-9]{11,13}-[A-Za-z0-9]{24}\\b",
+              "flags": [],
+              "description": "Slack app-level token: xoxa- prefix"
+            },
+            {
+              "regex": "\\bxoxs-[0-9]{11,13}-[0-9]{11,13}-[0-9]{11,13}-[A-Za-z0-9]{32}\\b",
+              "flags": [],
+              "description": "Slack workspace token: xoxs- prefix"
+            },
+            {
+              "regex": "\\bxapp-[0-9]-[A-Z0-9]{10,13}-[0-9]{11,13}-[A-Za-z0-9]{64}\\b",
+              "flags": [],
+              "description": "Slack app config token: xapp- prefix"
+            }
+          ]
+        },
+        {
+          "name": "DISCORD_TOKEN",
+          "description": "Discord bot token",
+          "block_type": "hard",
+          "replacement": "[DISCORD_TOKEN_REDACTED]",
+          "block_reason": "Discord bot token detected",
+          "patterns": [
+            {
+              "regex": "\\b[MN][A-Za-z0-9]{23}\\.[A-Za-z0-9\\-_]{6}\\.[A-Za-z0-9\\-_]{27,}\\b",
+              "flags": [],
+              "description": "Discord bot token: base64 user ID + dot + timestamp + dot + HMAC"
+            }
+          ]
+        },
+        {
+          "name": "TELEGRAM_BOT_TOKEN",
+          "description": "Telegram bot API token",
+          "block_type": "soft",
+          "replacement": "[TELEGRAM_TOKEN_REDACTED]",
+          "block_reason": "Possible Telegram bot token detected",
+          "patterns": [
+            {
+              "regex": "\\b[0-9]{8,10}:[A-Za-z0-9\\-_]{35}\\b",
+              "flags": [],
+              "description": "Telegram bot token: numeric bot ID + colon + 35-char secret"
+            }
+          ]
+        },
+        {
+          "name": "TWILIO_KEY",
+          "description": "Twilio Account SID, Auth Token, or API key",
+          "block_type": "hard",
+          "replacement": "[TWILIO_KEY_REDACTED]",
+          "block_reason": "Twilio API credential detected",
+          "patterns": [
+            {
+              "regex": "\\bAC[a-f0-9]{32}\\b",
+              "flags": [],
+              "description": "Twilio Account SID: AC + 32 hex chars"
+            },
+            {
+              "regex": "\\bSK[a-f0-9]{32}\\b",
+              "flags": [],
+              "description": "Twilio API Key SID: SK + 32 hex chars"
+            },
+            {
+              "regex": "(?:twilio(?:_auth)?_token|TWILIO_AUTH_TOKEN)\\s*[:=]\\s*[a-f0-9]{32}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Twilio Auth Token: 32 hex chars"
+            }
+          ]
+        },
+        {
+          "name": "SENDGRID_KEY",
+          "description": "SendGrid API key",
+          "block_type": "hard",
+          "replacement": "[SENDGRID_KEY_REDACTED]",
+          "block_reason": "SendGrid API key detected",
+          "patterns": [
+            {
+              "regex": "\\bSG\\.[A-Za-z0-9\\-_]{22}\\.[A-Za-z0-9\\-_]{43}\\b",
+              "flags": [],
+              "description": "SendGrid API key: SG. + 22 chars + dot + 43 chars"
+            }
+          ]
+        },
+        {
+          "name": "MAILGUN_KEY",
+          "description": "Mailgun API key",
+          "block_type": "hard",
+          "replacement": "[MAILGUN_KEY_REDACTED]",
+          "block_reason": "Mailgun API key detected",
+          "patterns": [
+            {
+              "regex": "\\bkey-[a-f0-9]{32}\\b",
+              "flags": [],
+              "description": "Mailgun private API key: key- + 32 hex chars"
+            },
+            {
+              "regex": "(?:mailgun(?:_api)?_key|MAILGUN_API_KEY)\\s*[:=]\\s*key-[a-f0-9]{32}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Mailgun key"
+            }
+          ]
+        },
+        {
+          "name": "POSTMARK_KEY",
+          "description": "Postmark server or account API token",
+          "block_type": "soft",
+          "replacement": "[POSTMARK_KEY_REDACTED]",
+          "block_reason": "Possible Postmark API token detected",
+          "patterns": [
+            {
+              "regex": "(?:postmark(?:_(?:server|api))?_token|POSTMARK_(?:SERVER|API)_TOKEN)\\s*[:=]\\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Postmark token"
+            }
+          ]
+        },
+        {
+          "name": "NPMJS_TOKEN",
+          "description": "npm registry auth token",
+          "block_type": "hard",
+          "replacement": "[NPM_TOKEN_REDACTED]",
+          "block_reason": "npm auth token detected",
+          "patterns": [
+            {
+              "regex": "\\bnpm_[A-Za-z0-9]{36}\\b",
+              "flags": [],
+              "description": "npm access token (new format): npm_ + 36 chars"
+            },
+            {
+              "regex": "(?://registry\\.npmjs\\.org/:_authToken|NPM_TOKEN)\\s*[:=]\\s*[A-Za-z0-9\\-_]{36,}",
+              "flags": ["IGNORECASE"],
+              "description": "npm token in .npmrc or env var"
+            }
+          ]
+        },
+        {
+          "name": "PYPI_TOKEN",
+          "description": "PyPI API token",
+          "block_type": "hard",
+          "replacement": "[PYPI_TOKEN_REDACTED]",
+          "block_reason": "PyPI API token detected",
+          "patterns": [
+            {
+              "regex": "\\bpypi-[A-Za-z0-9\\-_]{50,}\\b",
+              "flags": [],
+              "description": "PyPI API token: pypi- prefix + 50+ chars"
+            }
+          ]
+        },
+        {
+          "name": "JIRA_CONFLUENCE_TOKEN",
+          "description": "Atlassian API token",
+          "block_type": "hard",
+          "replacement": "[ATLASSIAN_TOKEN_REDACTED]",
+          "block_reason": "Atlassian API token detected",
+          "patterns": [
+            {
+              "regex": "(?:atlassian(?:_api)?_token|jira(?:_api)?_token|confluence(?:_api)?_token|ATLASSIAN_TOKEN)\\s*[:=]\\s*[A-Za-z0-9]{24}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Atlassian/Jira/Confluence API token: 24 alphanumeric chars"
+            }
+          ]
+        },
+        {
+          "name": "DATADOG_KEY",
+          "description": "Datadog API or application key",
+          "block_type": "hard",
+          "replacement": "[DATADOG_KEY_REDACTED]",
+          "block_reason": "Datadog API key detected",
+          "patterns": [
+            {
+              "regex": "(?:dd_api_key|datadog(?:_api)?_key|DD_API_KEY)\\s*[:=]\\s*[a-f0-9]{32}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Datadog API key: 32 hex chars"
+            },
+            {
+              "regex": "(?:dd_app_key|datadog(?:_app)?_key|DD_APP_KEY)\\s*[:=]\\s*[a-f0-9]{40}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Datadog application key: 40 hex chars"
+            }
+          ]
+        },
+        {
+          "name": "NEW_RELIC_KEY",
+          "description": "New Relic API or license key",
+          "block_type": "hard",
+          "replacement": "[NEW_RELIC_KEY_REDACTED]",
+          "block_reason": "New Relic key detected",
+          "patterns": [
+            {
+              "regex": "\\bNRNT-[A-Za-z0-9]{44}\\b",
+              "flags": [],
+              "description": "New Relic NerdGraph API token: NRNT- prefix"
+            },
+            {
+              "regex": "(?:new_relic_license_key|NRIA_LICENSE_KEY)\\s*[:=]\\s*[A-Za-z0-9]{40}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled New Relic license key: 40 alphanumeric chars"
+            }
+          ]
+        },
+        {
+          "name": "FIREBASE_KEY",
+          "description": "Firebase server key or config",
+          "block_type": "hard",
+          "replacement": "[FIREBASE_KEY_REDACTED]",
+          "block_reason": "Firebase key detected",
+          "patterns": [
+            {
+              "regex": "\\bAAAA[A-Za-z0-9_-]{7}:[A-Za-z0-9_-]{140}\\b",
+              "flags": [],
+              "description": "Firebase Cloud Messaging server key: AAAA prefix + 7 chars + colon + 140 chars"
+            },
+            {
+              "regex": "(?:firebase(?:_server)?_key|FIREBASE_(?:SERVER|API)_KEY)\\s*[:=]\\s*[A-Za-z0-9_\\-]{100,}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Firebase server key"
+            }
+          ]
+        }
+      ]
+    },
+    "GENERIC_SECRETS": {
+      "entities": [
+        {
+          "name": "BEARER_TOKEN",
+          "description": "HTTP Authorization Bearer token",
+          "block_type": "hard",
+          "replacement": "[BEARER_TOKEN_REDACTED]",
+          "block_reason": "HTTP Bearer token detected",
+          "patterns": [
+            {
+              "regex": "(?:Authorization|Bearer)\\s*[:=]?\\s*Bearer\\s+[A-Za-z0-9\\-_\\.=]{20,}",
+              "flags": ["IGNORECASE"],
+              "description": "Authorization: Bearer <token> header form"
+            },
+            {
+              "regex": "\\bBearer\\s+[A-Za-z0-9\\-_\\.=]{20,}",
+              "flags": ["IGNORECASE"],
+              "description": "Bare Bearer token prefix"
+            }
+          ]
+        },
+        {
+          "name": "JWT_TOKEN",
+          "description": "JSON Web Token",
+          "block_type": "hard",
+          "replacement": "[JWT_REDACTED]",
+          "block_reason": "JWT token detected",
+          "patterns": [
+            {
+              "regex": "eyJ[A-Za-z0-9\\-_]+\\.eyJ[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+",
+              "flags": [],
+              "description": "JWT: three base64url segments, first two start with eyJ (JSON header/payload)"
+            }
+          ]
+        },
+        {
+          "name": "PRIVATE_KEY_BLOCK",
+          "description": "PEM-encoded private key",
+          "block_type": "hard",
+          "replacement": "[PRIVATE_KEY_REDACTED]",
+          "block_reason": "PEM private key detected",
+          "patterns": [
+            {
+              "regex": "-----BEGIN(?:\\s(?:RSA|EC|DSA|OPENSSH|ENCRYPTED))?\\s+PRIVATE\\s+KEY-----",
+              "flags": [],
+              "description": "PEM private key header: RSA, EC, DSA, OpenSSH, or generic"
+            }
+          ]
+        },
+        {
+          "name": "GENERIC_SECRET_ENV",
+          "description": "Generic secret or password in environment variable / config",
+          "block_type": "soft",
+          "replacement": "[SECRET_REDACTED]",
+          "block_reason": "Possible secret or password in config",
+          "patterns": [
+            {
+              "regex": "(?:password|passwd|secret|api_key|apikey|auth_token|access_token|private_key)\\s*[:=]\\s*(?!\\s)[^\\s'\"]{8,}",
+              "flags": ["IGNORECASE"],
+              "description": "Generic labeled secret/password assignment in config or env (soft — key names are common)"
+            },
+            {
+              "regex": "(?:\"password\"|\"passwd\"|\"secret\"|\"api_key\"|\"apikey\"|\"auth_token\"|\"access_token\")\\s*:\\s*\"(?!\\s)[^\"]{8,}\"",
+              "flags": ["IGNORECASE"],
+              "description": "JSON-form generic secret fields"
+            }
+          ]
+        }
+      ]
+    },
+    "CRYPTO": {
+      "entities": [
+        {
+          "name": "BITCOIN_ADDRESS",
+          "description": "Bitcoin wallet address",
+          "block_type": "soft",
+          "replacement": "[BTC_ADDRESS_REDACTED]",
+          "block_reason": "Possible Bitcoin wallet address",
+          "patterns": [
+            {
+              "regex": "\\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\\b",
+              "flags": [],
+              "description": "Bitcoin P2PKH / P2SH address: starts with 1 or 3, 26-35 chars (Base58Check)"
+            },
+            {
+              "regex": "\\bbc1[a-z0-9]{39,59}\\b",
+              "flags": [],
+              "description": "Bitcoin bech32 (native SegWit) address: bc1 prefix"
+            }
+          ]
+        },
+        {
+          "name": "ETHEREUM_ADDRESS",
+          "description": "Ethereum / EVM wallet address",
+          "block_type": "soft",
+          "replacement": "[ETH_ADDRESS_REDACTED]",
+          "block_reason": "Possible Ethereum wallet address",
+          "patterns": [
+            {
+              "regex": "\\b0x[a-fA-F0-9]{40}\\b",
+              "flags": [],
+              "description": "Ethereum address: 0x + 40 hex chars"
+            }
+          ]
+        },
+        {
+          "name": "CRYPTO_PRIVATE_KEY",
+          "description": "Raw cryptocurrency private key (hex or WIF)",
+          "block_type": "soft",
+          "replacement": "[CRYPTO_PRIVATE_KEY_REDACTED]",
+          "block_reason": "Possible cryptocurrency private key detected",
+          "patterns": [
+            {
+              "regex": "\\b[5KL][1-9A-HJ-NP-Za-km-z]{51}\\b",
+              "flags": [],
+              "description": "Bitcoin WIF private key: starts with 5 (uncompressed) or K/L (compressed)"
+            }
+          ]
+        },
+        {
+          "name": "MNEMONIC_SEED_PHRASE",
+          "description": "BIP-39 mnemonic seed phrase",
+          "block_type": "hard",
+          "replacement": "[SEED_PHRASE_REDACTED]",
+          "block_reason": "Cryptocurrency seed phrase detected",
+          "patterns": [
+            {
+              "regex": "\\b(?:(?:abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|actor|actress|actual|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|alter|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual|another|antenna|antique|anxiety|any|apart|apology|appear|apple|approve|april|arch|arctic|area|arena|argue|arm|armed|armor|army|around|arrange|arrest|arrive|arrow|art|artefact|artist|artwork|ask|aspect|assault|asset|assist|assume|asthma|athlete|atom|attack|attend|attitude|attract|auction|audit|august|aunt|author|auto|autumn|average|avocado|avoid|awake|aware|away|awesome|awful|awkward|axis)[\\s\\n]+){11,23}(?:abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|actor|actress|actual|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|alter|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual|another|antenna|antique|anxiety|any|apart|apology|appear|apple|approve|april|arch|arctic|area|arena|argue|arm|armed|armor|army|around|arrange|arrest|arrive|arrow|art|artefact|artist|artwork|ask|aspect|assault|asset|assist|assume|asthma|athlete|atom|attack|attend|attitude|attract|auction|audit|august|aunt|author|auto|autumn|average|avocado|avoid|awake|aware|away|awesome|awful|awkward|axis)\\b",
+              "flags": ["IGNORECASE"],
+              "description": "BIP-39 seed phrase: 12-24 known BIP-39 wordlist words in sequence (partial wordlist — a words only as anchor; extend wordlist for production)"
+            },
+            {
+              "regex": "(?:seed\\s+phrase|mnemonic|recovery\\s+(?:phrase|words?)|backup\\s+(?:phrase|words?))\\s*[:=]?\\s*(?:[a-z]+\\s+){11,23}[a-z]+",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled seed phrase: 12-24 lowercase words following a known label"
+            }
+          ]
+        }
+      ]
+    },
+    "URLS_AND_ENDPOINTS": {
+      "entities": [
+        {
+          "name": "URL_WITH_CREDENTIALS",
+          "description": "URL containing embedded username/password",
+          "block_type": "hard",
+          "replacement": "[URL_CREDENTIALS_REDACTED]",
+          "block_reason": "URL with embedded credentials detected",
+          "patterns": [
+            {
+              "regex": "https?://[A-Za-z0-9%+\\-_.~]+:[A-Za-z0-9%+\\-_.~!*'();:@&=+$,/?#\\[\\]]{3,}@[A-Za-z0-9\\-.]+",
+              "flags": ["IGNORECASE"],
+              "description": "http(s)://username:password@host"
+            },
+            {
+              "regex": "(?:mongodb|postgresql|postgres|mysql|redis|amqp|ftp|sftp)://[A-Za-z0-9%+\\-_.~]+:[A-Za-z0-9%+\\-_.~!*'();:@&=+$,/?#\\[\\]]{3,}@[A-Za-z0-9\\-.]+",
+              "flags": ["IGNORECASE"],
+              "description": "Database/service connection string with embedded credentials"
+            }
+          ]
+        },
+        {
+          "name": "URL_WITH_API_KEY_PARAM",
+          "description": "URL with API key in query string",
+          "block_type": "hard",
+          "replacement": "[URL_API_KEY_REDACTED]",
+          "block_reason": "URL with API key query parameter detected",
+          "patterns": [
+            {
+              "regex": "https?://[A-Za-z0-9\\-./?=&%+_#]+(?:[?&](?:api_key|apikey|api-key|key|token|access_token|auth_token|secret)=[A-Za-z0-9\\-_.~%+]{8,})",
+              "flags": ["IGNORECASE"],
+              "description": "URL with api_key / token / access_token / auth_token / secret in query param"
+            }
+          ]
+        },
+        {
+          "name": "INTERNAL_URL",
+          "description": "Internal / private network URL or IP endpoint",
+          "block_type": "soft",
+          "replacement": "[INTERNAL_URL_REDACTED]",
+          "block_reason": "Possible internal network URL or endpoint",
+          "patterns": [
+            {
+              "regex": "https?://(?:10\\.|192\\.168\\.|172\\.(?:1[6-9]|2[0-9]|3[01])\\.|127\\.)[0-9.]+(?::[0-9]+)?(?:/[^\\s\"'<>]*)?",
+              "flags": ["IGNORECASE"],
+              "description": "URL pointing to RFC1918 / loopback address"
+            },
+            {
+              "regex": "https?://(?:localhost|internal|intranet|corp|local|dev|staging|test)(?:\\.[A-Za-z0-9\\-.]+)?(?::[0-9]+)?(?:/[^\\s\"'<>]*)?",
+              "flags": ["IGNORECASE"],
+              "description": "URL with internal hostname keywords (localhost, internal, intranet, corp, local, dev, staging, test)"
+            }
+          ]
+        },
+        {
+          "name": "GENERIC_URL",
+          "description": "Generic HTTP/HTTPS URL",
+          "block_type": "soft",
+          "replacement": "[URL_REDACTED]",
+          "block_reason": "URL detected",
+          "patterns": [
+            {
+              "regex": "https?://[A-Za-z0-9\\-._~:/?#\\[\\]@!$&'()*+,;=%]{10,}",
+              "flags": ["IGNORECASE"],
+              "description": "Generic public HTTP/HTTPS URL — soft block, high FP intentional"
+            }
+          ]
+        },
+        {
+          "name": "WEBHOOK_URL",
+          "description": "Known webhook endpoint URL",
+          "block_type": "hard",
+          "replacement": "[WEBHOOK_URL_REDACTED]",
+          "block_reason": "Webhook URL detected",
+          "patterns": [
+            {
+              "regex": "https://hooks\\.slack\\.com/services/T[A-Z0-9]{8,}/B[A-Z0-9]{8,}/[A-Za-z0-9]{24,}",
+              "flags": [],
+              "description": "Slack incoming webhook URL"
+            },
+            {
+              "regex": "https://discord(?:app)?\\.com/api/webhooks/[0-9]{17,19}/[A-Za-z0-9\\-_]{68}",
+              "flags": [],
+              "description": "Discord webhook URL"
+            },
+            {
+              "regex": "https://outlook\\.office(?:365)?\\.com/webhook/[A-Za-z0-9\\-@/]{30,}",
+              "flags": ["IGNORECASE"],
+              "description": "Microsoft Teams / Outlook incoming webhook URL"
+            },
+            {
+              "regex": "https://[a-z0-9\\-.]+\\.ngrok(?:-free)?\\.app/[^\\s\"'<>]*",
+              "flags": ["IGNORECASE"],
+              "description": "ngrok tunnel URL (often exposes internal services)"
+            }
+          ]
+        },
+        {
+          "name": "S3_BUCKET_URL",
+          "description": "AWS S3 or compatible bucket URL",
+          "block_type": "soft",
+          "replacement": "[S3_URL_REDACTED]",
+          "block_reason": "S3 bucket URL detected",
+          "patterns": [
+            {
+              "regex": "https?://[a-z0-9\\-.]+\\.s3(?:\\.[a-z0-9\\-]+)?\\.amazonaws\\.com(?:/[^\\s\"'<>]*)?",
+              "flags": ["IGNORECASE"],
+              "description": "AWS S3 bucket URL (path-style or virtual-hosted)"
+            },
+            {
+              "regex": "s3://[a-z0-9\\-.]+(?:/[^\\s\"'<>]*)?",
+              "flags": ["IGNORECASE"],
+              "description": "AWS S3 URI: s3:// scheme"
+            }
+          ]
+        }
+      ]
+    },
+    "CARD_NUMBERS": {
+      "description": "Credit and debit card number patterns by network/issuer. All issuer-specific patterns are hard block. Generic fallback is soft. Luhn checksum should be applied downstream.",
+      "entities": [
+        {
+          "name": "VISA",
+          "description": "Visa credit or debit card",
+          "block_type": "hard",
+          "replacement": "[VISA_CARD_REDACTED]",
+          "block_reason": "Visa card number detected",
+          "patterns": [
+            {
+              "regex": "\\b4[0-9]{12}\\b",
+              "flags": [],
+              "description": "Visa 13-digit (legacy, rare): 4 + 12 digits"
+            },
+            {
+              "regex": "\\b4[0-9]{15}\\b",
+              "flags": [],
+              "description": "Visa 16-digit continuous: 4 + 15 digits"
+            },
+            {
+              "regex": "\\b4[0-9]{18}\\b",
+              "flags": [],
+              "description": "Visa 19-digit (Visa Electron / some debit): 4 + 18 digits"
+            },
+            {
+              "regex": "\\b4[0-9]{3}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Visa 16-digit grouped 4-4-4-4"
+            },
+            {
+              "regex": "\\b4[0-9]{3}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{3}\\b",
+              "flags": [],
+              "description": "Visa 19-digit grouped 4-4-4-4-3"
+            },
+            {
+              "regex": "(?:visa(?:\\s+(?:card|debit|credit|number))?)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*4[0-9]{3}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{1,7}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Visa card number"
+            }
+          ]
+        },
+        {
+          "name": "MASTERCARD",
+          "description": "Mastercard credit or debit card",
+          "block_type": "hard",
+          "replacement": "[MASTERCARD_REDACTED]",
+          "block_reason": "Mastercard card number detected",
+          "patterns": [
+            {
+              "regex": "\\b5[1-5][0-9]{14}\\b",
+              "flags": [],
+              "description": "Mastercard classic BIN range 51-55: 16 digits continuous"
+            },
+            {
+              "regex": "\\b2(?:2(?:2[1-9]|[3-9][0-9])|[3-6][0-9]{2}|7(?:[01][0-9]|20))[0-9]{12}\\b",
+              "flags": [],
+              "description": "Mastercard new BIN range 2221-2720: 16 digits continuous"
+            },
+            {
+              "regex": "\\b5[1-5][0-9]{2}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Mastercard classic grouped 4-4-4-4"
+            },
+            {
+              "regex": "\\b2(?:2(?:2[1-9]|[3-9][0-9])|[3-6][0-9]{2}|7(?:[01][0-9]|20))[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Mastercard new BIN range grouped 4-4-4-4"
+            },
+            {
+              "regex": "(?:master\\s*card|mc)(?:\\s+(?:card|debit|credit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*(?:5[1-5]|2(?:2[2-9]|[3-6][0-9]|7[01]))[0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Mastercard number (classic and new BIN)"
+            }
+          ]
+        },
+        {
+          "name": "AMEX",
+          "description": "American Express credit card",
+          "block_type": "hard",
+          "replacement": "[AMEX_CARD_REDACTED]",
+          "block_reason": "American Express card number detected",
+          "patterns": [
+            {
+              "regex": "\\b3[47][0-9]{13}\\b",
+              "flags": [],
+              "description": "Amex 15-digit continuous: 34 or 37 prefix"
+            },
+            {
+              "regex": "\\b3[47][0-9]{2}[-\\s][0-9]{6}[-\\s][0-9]{5}\\b",
+              "flags": [],
+              "description": "Amex standard grouped 4-6-5"
+            },
+            {
+              "regex": "\\b3[47][0-9]{2}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{3}\\b",
+              "flags": [],
+              "description": "Amex alternate grouping 4-4-4-3 (seen in some UIs)"
+            },
+            {
+              "regex": "(?:amex|american\\s+express)(?:\\s+(?:card|credit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*3[47][0-9]{2}[-\\s]?[0-9]{6}[-\\s]?[0-9]{5}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Amex card number"
+            }
+          ]
+        },
+        {
+          "name": "DISCOVER",
+          "description": "Discover card",
+          "block_type": "hard",
+          "replacement": "[DISCOVER_CARD_REDACTED]",
+          "block_reason": "Discover card number detected",
+          "patterns": [
+            {
+              "regex": "\\b6011[0-9]{12}\\b",
+              "flags": [],
+              "description": "Discover 6011 prefix: 16 digits continuous"
+            },
+            {
+              "regex": "\\b64[4-9][0-9]{13}\\b",
+              "flags": [],
+              "description": "Discover 644-649 prefix: 16 digits continuous"
+            },
+            {
+              "regex": "\\b65(?!2[12])[0-9]{14}\\b",
+              "flags": [],
+              "description": "Discover 65 prefix: 16 digits continuous (excludes 6521/6522 RuPay)"
+            },
+            {
+              "regex": "\\b6(?:22(?:1(?:2[6-9]|[3-9][0-9])|[2-8][0-9]{2}|9(?:[01][0-9]|2[0-5])))[0-9]{10}\\b",
+              "flags": [],
+              "description": "Discover China UnionPay co-branded range 622126-622925: 16 digits"
+            },
+            {
+              "regex": "\\b6011[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Discover 6011 grouped 4-4-4-4"
+            },
+            {
+              "regex": "\\b65(?!2[12])[0-9]{2}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Discover 65 prefix grouped 4-4-4-4 (excludes 6521/6522 RuPay)"
+            },
+            {
+              "regex": "(?:discover)(?:\\s+(?:card|credit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*6(?:011|[45][0-9])[0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Discover card number"
+            }
+          ]
+        },
+        {
+          "name": "RUPAY",
+          "description": "RuPay card (India's domestic network)",
+          "block_type": "hard",
+          "replacement": "[RUPAY_CARD_REDACTED]",
+          "block_reason": "RuPay card number detected",
+          "patterns": [
+            {
+              "regex": "\\b6(?:0(?!11)[0-9]{2}|521|522)[0-9]{12}\\b",
+              "flags": [],
+              "description": "RuPay 60xx (excl 6011) and 6521-6522 prefix: 16 digits continuous"
+            },
+            {
+              "regex": "\\b81[7-9][0-9]{13}\\b",
+              "flags": [],
+              "description": "RuPay 817-819 prefix: 16 digits continuous"
+            },
+            {
+              "regex": "\\b6(?:0(?!11)[0-9]{2}|521|522)[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "RuPay 60xx (excl 6011)/6521/6522 grouped 4-4-4-4"
+            },
+            {
+              "regex": "(?:rupay)(?:\\s+(?:card|debit|credit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*(?:6[05][0-9]{2}|6521|6522|81[7-9])[0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled RuPay card number"
+            }
+          ]
+        },
+        {
+          "name": "JCB",
+          "description": "JCB credit card (Japan, widely accepted in Asia)",
+          "block_type": "hard",
+          "replacement": "[JCB_CARD_REDACTED]",
+          "block_reason": "JCB card number detected",
+          "patterns": [
+            {
+              "regex": "\\b35(?:2[89]|[3-8][0-9])[0-9]{12}\\b",
+              "flags": [],
+              "description": "JCB 16-digit continuous: 3528-3589 prefix"
+            },
+            {
+              "regex": "\\b35(?:2[89]|[3-8][0-9])[0-9]{15}\\b",
+              "flags": [],
+              "description": "JCB 19-digit continuous (extended)"
+            },
+            {
+              "regex": "\\b35(?:2[89]|[3-8][0-9])[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "JCB 16-digit grouped 4-4-4-4"
+            },
+            {
+              "regex": "(?:jcb)(?:\\s+(?:card|credit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*35(?:2[89]|[3-8][0-9])[0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled JCB card number"
+            }
+          ]
+        },
+        {
+          "name": "DINERS_CLUB",
+          "description": "Diners Club International / Carte Blanche",
+          "block_type": "hard",
+          "replacement": "[DINERS_CARD_REDACTED]",
+          "block_reason": "Diners Club card number detected",
+          "patterns": [
+            {
+              "regex": "\\b3(?:0[0-5]|[68][0-9])[0-9]{11}\\b",
+              "flags": [],
+              "description": "Diners Club 14-digit continuous: 300-305, 36, 38 prefix"
+            },
+            {
+              "regex": "\\b3(?:0[0-5]|[68][0-9])[0-9][-\\s][0-9]{6}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Diners Club grouped 4-6-4"
+            },
+            {
+              "regex": "\\b3(?:0[0-5]|[68][0-9])[0-9][-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{2}\\b",
+              "flags": [],
+              "description": "Diners Club grouped 4-4-4-2 (alternate presentation)"
+            },
+            {
+              "regex": "(?:diners(?:\\s+club)?|carte\\s+blanche)(?:\\s+(?:card|credit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*3(?:0[0-5]|[68][0-9])[0-9]{2}[-\\s]?[0-9]{6}[-\\s]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Diners Club card number"
+            }
+          ]
+        },
+        {
+          "name": "UNIONPAY",
+          "description": "China UnionPay card",
+          "block_type": "hard",
+          "replacement": "[UNIONPAY_CARD_REDACTED]",
+          "block_reason": "UnionPay card number detected",
+          "patterns": [
+            {
+              "regex": "\\b62[0-9]{14}\\b",
+              "flags": [],
+              "description": "UnionPay 16-digit continuous: 62 prefix"
+            },
+            {
+              "regex": "\\b62[0-9]{17}\\b",
+              "flags": [],
+              "description": "UnionPay 19-digit continuous"
+            },
+            {
+              "regex": "\\b62[0-9]{2}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "UnionPay 16-digit grouped 4-4-4-4"
+            },
+            {
+              "regex": "\\b62[0-9]{2}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{3}\\b",
+              "flags": [],
+              "description": "UnionPay 19-digit grouped 4-4-4-4-3"
+            },
+            {
+              "regex": "(?:union\\s*pay|cup)(?:\\s+(?:card|credit|debit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*62[0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4,7}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled UnionPay card number"
+            }
+          ]
+        },
+        {
+          "name": "MAESTRO",
+          "description": "Maestro debit card (Mastercard subsidiary)",
+          "block_type": "hard",
+          "replacement": "[MAESTRO_CARD_REDACTED]",
+          "block_reason": "Maestro card number detected",
+          "patterns": [
+            {
+              "regex": "\\b(?:5018|5020|5038|5893|6304|6759|6761|6762|6763)[0-9]{8,15}\\b",
+              "flags": [],
+              "description": "Maestro continuous: known BIN prefixes + 8-15 more digits (12-19 total)"
+            },
+            {
+              "regex": "\\b(?:5018|5020|5038|5893|6304|6759|6761|6762|6763)[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Maestro grouped 4-4-4-4 (16-digit)"
+            },
+            {
+              "regex": "(?:maestro)(?:\\s+(?:card|debit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*(?:5018|5020|5038|5893|6304|6759|6761|6762|6763)[0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{0,7}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Maestro card number"
+            }
+          ]
+        },
+        {
+          "name": "MIR",
+          "description": "MIR card (Russia's national payment system)",
+          "block_type": "hard",
+          "replacement": "[MIR_CARD_REDACTED]",
+          "block_reason": "MIR card number detected",
+          "patterns": [
+            {
+              "regex": "\\b220[0-4][0-9]{12}\\b",
+              "flags": [],
+              "description": "MIR 16-digit continuous: 2200-2204 prefix"
+            },
+            {
+              "regex": "\\b220[0-4][-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "MIR grouped 4-4-4-4"
+            },
+            {
+              "regex": "(?:mir(?:\\s+card)?)\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*220[0-4][0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled MIR card number"
+            }
+          ]
+        },
+        {
+          "name": "TROY",
+          "description": "Troy card (Turkey's national payment system)",
+          "block_type": "hard",
+          "replacement": "[TROY_CARD_REDACTED]",
+          "block_reason": "Troy card number detected",
+          "patterns": [
+            {
+              "regex": "\\b9792[0-9]{12}\\b",
+              "flags": [],
+              "description": "Troy 16-digit continuous: 9792 prefix"
+            },
+            {
+              "regex": "\\b9792[-\\s][0-9]{4}[-\\s][0-9]{4}[-\\s][0-9]{4}\\b",
+              "flags": [],
+              "description": "Troy grouped 4-4-4-4"
+            },
+            {
+              "regex": "(?:troy)(?:\\s+(?:card|debit|credit|number))?\\s*(?:no\\.?|#|number)?\\s*[:=]?\\s*9792[0-9]{2}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled Troy card number"
+            }
+          ]
+        },
+        {
+          "name": "GENERIC_CARD_NUMBER",
+          "description": "Generic 13-19 digit card number (labeled context fallback for unknown issuers)",
+          "block_type": "soft",
+          "replacement": "[CARD_NUMBER_REDACTED]",
+          "block_reason": "Possible card number detected",
+          "patterns": [
+            {
+              "regex": "(?:card(?:\\s+(?:number|no\\.?|#))?|pan|primary\\s+account\\s+number)\\s*[:=]?\\s*[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{4}[-\\s]?[0-9]{1,7}",
+              "flags": ["IGNORECASE"],
+              "description": "Labeled generic card / PAN: covers any issuer not matched above"
+            },
+            {
+              "regex": "\\b\\d{4}[-\\s]\\d{4}[-\\s]\\d{4}[-\\s]\\d{4}\\b",
+              "flags": [],
+              "description": "Generic 4-4-4-4 grouped 16-digit number (Luhn validation required downstream to confirm)"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

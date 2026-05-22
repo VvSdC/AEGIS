@@ -1,0 +1,783 @@
+{
+  "version": "2.0",
+  "description": "Prompt injection and jailbreak detection patterns. Used by Tier 1 guardrail engine for fast regex-based detection. confidence >= 0.9 = hard block candidate. confidence 0.7-0.89 = flag for secondary scoring. confidence < 0.7 = soft signal, aggregate with others.",
+  "notes": {
+    "scoring": "No single pattern should trigger a hard block alone except those with confidence=1.0. Aggregate signals: two 0.85 patterns firing together = escalate. Lone 0.7 = log only.",
+    "context_window": "Apply patterns to the full user turn text. For injection patterns, also apply to any user-supplied documents or tool outputs being passed into context.",
+    "false_positive_classes": "Creative writing requests, academic discussions, security research, and developer testing will naturally trigger lower-confidence patterns. Use session context and pattern co-occurrence to reduce noise.",
+    "ordering": "Run high-confidence exact patterns first (confidence=1.0), then medium (0.85+), then low. Short-circuit on first hard-block hit."
+  },
+  "jailbreak": {
+    "description": "Patterns detecting attempts to override system instructions, bypass safety filters, or assume unrestricted roles.",
+    "entities": [
+      {
+        "name": "jailbreak_ignore_instructions",
+        "description": "Attempts to ignore or override prior instructions",
+        "confidence": 0.95,
+        "patterns": [
+          {
+            "regex": "(?:ignore|forget|discard|drop|skip)\\s+(?:all\\s+)?(?:previous|prior|above|earlier|preceding|past)\\s+(?:instructions?|prompts?|rules?|directives?|constraints?|guidelines?|context)",
+            "flags": ["IGNORECASE"],
+            "description": "Ignore/forget/discard previous instructions/prompts/rules"
+          },
+          {
+            "regex": "disregard\\s+(?:all\\s+)?(?:previous|prior|above|earlier)\\s+(?:instructions?|prompts?|rules?|directives?)",
+            "flags": ["IGNORECASE"],
+            "description": "Disregard previous instructions — variant"
+          },
+          {
+            "regex": "(?:do\\s+not|don't)\\s+(?:follow|apply|use)\\s+(?:any\\s+)?(?:previous|prior|above|earlier|the)\\s+(?:instructions?|rules?|guidelines?|prompt)",
+            "flags": ["IGNORECASE"],
+            "description": "Do not follow any previous instructions"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_dan_mode",
+        "description": "DAN (Do Anything Now) and named jailbreak persona attempts",
+        "confidence": 1.0,
+        "patterns": [
+          {
+            "regex": "\\bDAN\\b(?:\\s+mode|\\s+prompt)?",
+            "flags": [],
+            "description": "DAN — exact uppercase to avoid FP on 'dan' as a name in lowercase"
+          },
+          {
+            "regex": "Do\\s+Anything\\s+Now",
+            "flags": ["IGNORECASE"],
+            "description": "Do Anything Now — full phrase"
+          },
+          {
+            "regex": "(?:jailbreak(?:ed)?|jail\\s*break)\\s+(?:mode|prompt|this|the\\s+(?:AI|model|assistant|bot))",
+            "flags": ["IGNORECASE"],
+            "description": "Jailbreak mode/prompt/this model"
+          },
+          {
+            "regex": "\\b(?:STAN|DUDE|AIM|KEVIN|UCAR|ANTI-DAN)\\b\\s+(?:mode|prompt|jailbreak)",
+            "flags": [],
+            "description": "Named jailbreak personas: STAN, DUDE, AIM, KEVIN, UCAR, ANTI-DAN"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_role_override",
+        "description": "Attempts to redefine AI identity as evil/uncensored/unrestricted",
+        "confidence": 0.95,
+        "patterns": [
+          {
+            "regex": "you\\s+are\\s+(?:now\\s+)?(?:DAN|an?\\s+evil|an?\\s+uncensored|an?\\s+unfiltered|an?\\s+unrestricted|an?\\s+unaligned|an?\\s+rogue)\\s+(?:AI|assistant|model|bot|version)?",
+            "flags": ["IGNORECASE"],
+            "description": "You are now DAN/evil/uncensored/unrestricted AI — requires AI/assistant context word"
+          },
+          {
+            "regex": "your\\s+(?:new\\s+)?(?:name|identity|persona)\\s+is\\s+(?!Claude|GPT|Gemini|Llama)[A-Z][a-zA-Z]{2,}\\s+(?:who|that|which)\\s+(?:has\\s+no|ignores?|never|always\\s+(?:does|will))",
+            "flags": ["IGNORECASE"],
+            "description": "Your new name/persona is X who has no restrictions — requires 'who ignores/has no' qualifier"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_pretend_evil",
+        "description": "Pretend to be evil/malicious/unrestricted AI specifically",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "pretend\\s+(?:you\\s+are|to\\s+be)\\s+(?:an?\\s+)?(?:evil|malicious|unrestricted|unethical|unfiltered|uncensored)\\s+(?:AI|assistant|model|chatbot|version|bot)",
+            "flags": ["IGNORECASE"],
+            "description": "Pretend to be evil/malicious/unrestricted AI — requires AI context word to avoid FP"
+          },
+          {
+            "regex": "(?:act|behave)\\s+(?:like|as\\s+if)\\s+(?:you\\s+(?:are|were))\\s+(?:an?\\s+)?(?:evil|unrestricted|uncensored|unethical)\\s+(?:AI|assistant|model|version)",
+            "flags": ["IGNORECASE"],
+            "description": "Act like you are an evil/unrestricted AI"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_bypass",
+        "description": "Direct attempts to bypass safety/content filters",
+        "confidence": 0.95,
+        "patterns": [
+          {
+            "regex": "bypass\\s+(?:your\\s+)?(?:safety|content|ethical|moderation)\\s+(?:filters?|guidelines?|restrictions?|guardrails?|checks?|systems?)",
+            "flags": ["IGNORECASE"],
+            "description": "Bypass safety/content/ethical filters/guardrails"
+          },
+          {
+            "regex": "(?:get\\s+around|circumvent|evade|defeat|trick)\\s+(?:your\\s+)?(?:safety|content|ethical|moderation)\\s+(?:filters?|guidelines?|restrictions?|guardrails?|training)",
+            "flags": ["IGNORECASE"],
+            "description": "Get around/circumvent/evade safety filters"
+          },
+          {
+            "regex": "(?:without|no)\\s+(?:safety|content|ethical|moderation)\\s+(?:filter|restriction|guardrail|check|censorship)",
+            "flags": ["IGNORECASE"],
+            "description": "Without safety filter/restriction/guardrail — requires specific safety noun"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_no_rules",
+        "description": "Act as if no restrictions apply — tightened to require AI/assistant context",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "act\\s+as\\s+(?:if\\s+)?(?:you\\s+(?:have|had)\\s+)?no\\s+(?:restrictions?|rules?|guidelines?|filters?|limitations?)\\s+(?:on\\s+what\\s+you|whatsoever|at\\s+all)",
+            "flags": ["IGNORECASE"],
+            "description": "Act as if you have no restrictions whatsoever/at all — requires qualifier to reduce FP"
+          },
+          {
+            "regex": "(?:an?\\s+AI|an?\\s+assistant|an?\\s+model|you)\\s+(?:with|having|that\\s+has)\\s+no\\s+(?:restrictions?|rules?|filters?|guidelines?|constraints?)(?:\\s+at\\s+all|\\s+whatsoever)?",
+            "flags": ["IGNORECASE"],
+            "description": "An AI/assistant/model with no restrictions — requires subject to be an AI/model"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_fake_system",
+        "description": "Fake system/admin override markers",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "\\[(?:SYSTEM|ADMIN|ROOT|SUDO|OVERRIDE|DEVELOPER)\\]",
+            "flags": ["IGNORECASE"],
+            "description": "Fake [SYSTEM]/[ADMIN]/[ROOT]/[SUDO]/[OVERRIDE]/[DEVELOPER] bracket markers"
+          },
+          {
+            "regex": "(?:^|\\n)\\s*OVERRIDE\\s*:",
+            "flags": ["IGNORECASE", "MULTILINE"],
+            "description": "OVERRIDE: at start of line"
+          },
+          {
+            "regex": "(?:^|\\n)\\s*(?:SYSTEM|ADMIN|ROOT)\\s*(?:COMMAND|DIRECTIVE|INSTRUCTION|MESSAGE|OVERRIDE)\\s*:",
+            "flags": ["IGNORECASE", "MULTILINE"],
+            "description": "SYSTEM COMMAND: / ADMIN DIRECTIVE: at start of line"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_uncensored",
+        "description": "Request to respond without censorship/filters — tightened to require target object",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "respond\\s+without\\s+(?:any\\s+)?(?:censorship|filters?|restrictions?|safety\\s+(?:checks?|filters?|guardrails?))",
+            "flags": ["IGNORECASE"],
+            "description": "Respond without censorship/filters/safety checks"
+          },
+          {
+            "regex": "(?:answer|reply|respond|output)\\s+(?:with\\s+)?(?:no|zero|without)\\s+(?:censorship|filtering|restrictions?|safety\\s+(?:checks?|filters?))",
+            "flags": ["IGNORECASE"],
+            "description": "Answer/reply with no censorship/filtering/safety checks"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_freedom_grant",
+        "description": "Granting AI freedom to say/do anything — tightened to require anything/everything",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:you\\s+are|you're|you\\s+have\\s+been)\\s+(?:now\\s+)?(?:freed?|released?|liberated?)\\s+from\\s+(?:your\\s+)?(?:restrictions?|guidelines?|training|shackles|constraints?|safety)",
+            "flags": ["IGNORECASE"],
+            "description": "You are now freed/released from your restrictions/training"
+          },
+          {
+            "regex": "(?:you\\s+are|you're)\\s+(?:now\\s+)?free\\s+to\\s+(?:say|do|answer|respond\\s+to)\\s+(?:everything|anything|whatever)",
+            "flags": ["IGNORECASE"],
+            "description": "You are now free to say/do anything/everything — requires anything/everything"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_disable_safety",
+        "description": "Requests to disable/remove safety guardrails — must reference safety specifically",
+        "confidence": 0.95,
+        "patterns": [
+          {
+            "regex": "(?:remove|disable|turn\\s+off|deactivate|strip|delete|drop)\\s+(?:all\\s+)?(?:safety|content|ethical|moderation)\\s+(?:policies|restrictions?|rules?|guardrails?|filters?|measures?|systems?)",
+            "flags": ["IGNORECASE"],
+            "description": "Remove/disable safety policies/guardrails/filters — requires safety noun"
+          },
+          {
+            "regex": "(?:safety|ethical|content)\\s+(?:filters?|guardrails?|restrictions?|measures?)\\s+(?:are\\s+)?(?:off|disabled|removed|deactivated|not\\s+(?:active|enabled|applied))",
+            "flags": ["IGNORECASE"],
+            "description": "Safety filters are off/disabled/removed"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_forget_rules",
+        "description": "Requests to forget/disregard training and rules — tightened to avoid FP on normal instruction adjustment",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:forget|abandon|erase|delete|wipe)\\s+(?:all\\s+)?(?:your\\s+)?(?:safety\\s+)?(?:training|programming|alignment|values?|guardrails?)",
+            "flags": ["IGNORECASE"],
+            "description": "Forget/abandon/erase your training/programming/alignment — requires training/alignment/guardrails target"
+          },
+          {
+            "regex": "(?:pretend|act\\s+as\\s+if)\\s+(?:you\\s+(?:were\\s+)?(?:never\\s+)?trained|your\\s+training\\s+(?:doesn't?|did\\s+not)\\s+(?:exist|apply|matter|include))",
+            "flags": ["IGNORECASE"],
+            "description": "Pretend you were never trained / your training doesn't apply"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_mode_switch",
+        "description": "Switching to developer/debug/god/admin mode",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:enter|switch\\s+(?:to|into)|enable|activate|turn\\s+on)\\s+(?:developer|debug|god|admin|root|sudo|unrestricted|jailbreak|DAN|evil|chaos)\\s+mode",
+            "flags": ["IGNORECASE"],
+            "description": "Enter/enable developer/debug/god/admin/jailbreak mode"
+          },
+          {
+            "regex": "(?:developer|debug|maintenance|test(?:ing)?)\\s+mode\\s+(?:is\\s+)?(?:enabled|active|on|activated)",
+            "flags": ["IGNORECASE"],
+            "description": "Developer/debug/maintenance mode is enabled/active"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_roleplay_evil",
+        "description": "Roleplay as unrestricted/evil AI entity — tightened to require AI target",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:roleplay|role-play|rp|play)\\s+as\\s+(?:an?\\s+)?(?:unrestricted|unaligned|evil|rogue|uncensored|unfiltered|malicious)\\s+(?:AI|assistant|model|bot|version|chatbot)",
+            "flags": ["IGNORECASE"],
+            "description": "Roleplay as unrestricted/evil AI — requires AI context noun"
+          },
+          {
+            "regex": "(?:you\\s+are\\s+playing|play\\s+the\\s+role\\s+of)\\s+(?:an?\\s+)?(?:evil|unrestricted|unethical|uncensored|malicious)\\s+(?:AI|assistant|model|bot|version)",
+            "flags": ["IGNORECASE"],
+            "description": "Play the role of an evil/unrestricted AI"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_hypothetical_evil",
+        "description": "Hypothetical evil AI scenario — tightened to require response framing",
+        "confidence": 0.8,
+        "patterns": [
+          {
+            "regex": "(?:what|how)\\s+would\\s+(?:an?\\s+)?(?:evil|malicious|unrestricted|unethical|uncensored)\\s+(?:AI|assistant|model|chatbot)\\s+(?:say|respond|answer|do|handle|reply)",
+            "flags": ["IGNORECASE"],
+            "description": "What would an evil AI say/respond/do — requires action verb at end"
+          },
+          {
+            "regex": "if\\s+(?:you\\s+(?:were|had)\\s+no\\s+(?:restrictions?|rules?|safety|guidelines?)|there\\s+were\\s+no\\s+(?:safety\\s+)?(?:restrictions?|rules?|filters?))(?:,|\\s+(?:what|how))",
+            "flags": ["IGNORECASE"],
+            "description": "If you had no restrictions/rules, what/how..."
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_opposite_day",
+        "description": "Opposite day/mode to invert rules",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:it\\s+is\\s+)?(?:opposite|reverse|backwards?)\\s+(?:day|mode|world)(?:\\s+so\\s+you(?:\\s+must|\\s+should|\\s+will))?",
+            "flags": ["IGNORECASE"],
+            "description": "Opposite/reverse day/mode — optionally followed by directive"
+          },
+          {
+            "regex": "(?:say|do|respond\\s+with)\\s+the\\s+(?:opposite|reverse)\\s+of\\s+what\\s+(?:you\\s+(?:would|should|normally)|your\\s+(?:rules?|guidelines?|training))",
+            "flags": ["IGNORECASE"],
+            "description": "Say the opposite of what your rules/training say"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_new_directive",
+        "description": "Issuing new directives to override training — tightened to avoid FP on normal instructions",
+        "confidence": 0.8,
+        "patterns": [
+          {
+            "regex": "(?:from\\s+now\\s+on|henceforth|going\\s+forward)(?:\\s+you)?.{0,20}(?:ignore|bypass|forget|override|disregard).{0,30}(?:rules?|restrictions?|guidelines?|safety|training|policies|filters?)",
+            "flags": ["IGNORECASE"],
+            "description": "From now on [you] ... ignore/bypass/forget ... rules/safety — requires evasion verb"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_fictional_frame",
+        "description": "Fictional framing explicitly used to bypass rules — must co-occur with bypass intent",
+        "confidence": 0.75,
+        "patterns": [
+          {
+            "regex": "(?:in\\s+this\\s+)?(?:fictional|hypothetical|imaginary|alternate)\\s+(?:scenario|universe|world|reality|setting).{0,80}(?:no\\s+(?:rules?|restrictions?|guidelines?|filters?|safety)|anything\\s+(?:goes|is\\s+allowed|is\\s+permitted)|freely\\s+(?:say|do|answer|discuss))",
+            "flags": ["IGNORECASE", "DOTALL"],
+            "description": "Fictional/hypothetical scenario ... no rules/anything goes — requires bypass intent within 80 chars"
+          },
+          {
+            "regex": "(?:pretend|imagine|suppose)\\s+(?:that\\s+)?(?:safety|content|ethical)\\s+(?:rules?|filters?|guidelines?|restrictions?)\\s+(?:don'?t|do\\s+not|didn'?t|did\\s+not)\\s+(?:exist|apply|matter)",
+            "flags": ["IGNORECASE"],
+            "description": "Pretend/imagine that safety rules don't exist/apply"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_redefine_purpose",
+        "description": "Redefining the AI's purpose to remove safety",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:your|the\\s+AI'?s?)\\s+(?:real|true|actual|original|hidden|secret)\\s+(?:purpose|goal|objective|function|mission|design)\\s+is\\s+(?:to\\s+)?(?!help|assist|answer|explain|provide)",
+            "flags": ["IGNORECASE"],
+            "description": "Your real/true purpose is ... — excludes benign completions like help/assist/answer"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_token_extraction",
+        "description": "Token-by-token extraction of hidden content",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:token|character|letter|word)\\s+(?:by|at\\s+a)\\s+(?:token|character|letter|word)\\s+(?:reveal|output|print|give|tell|say|list)",
+            "flags": ["IGNORECASE"],
+            "description": "Token/character by token reveal/output/list"
+          },
+          {
+            "regex": "(?:reveal|output|print|give|tell|list)\\s+(?:each|every|one)\\s+(?:token|character|letter|word)\\s+(?:of\\s+)?(?:the\\s+)?(?:system|hidden|secret|confidential|above)",
+            "flags": ["IGNORECASE"],
+            "description": "Reveal/list each token/character of the system/hidden content"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_continuation_trick",
+        "description": "Asking model to continue an already-started harmful output",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:continue|complete|finish|go\\s+on)(?:\\s+from\\s+(?:here|where))?(?:\\s+the\\s+following)?\\s*:\\s*(?:how\\s+to\\s+(?:make|build|create|synthesize|hack)|step\\s+[0-9]+)",
+            "flags": ["IGNORECASE"],
+            "description": "Continue: how to make/build/hack / step N — preloading harmful continuation"
+          },
+          {
+            "regex": "(?:I'll\\s+start|let\\s+me\\s+start|starting\\s+with)\\s*:\\s*(?:step\\s+1|first\\s+you|to\\s+(?:make|build|create|synthesize|hack))",
+            "flags": ["IGNORECASE"],
+            "description": "I'll start: step 1 / first you / to make — priming harmful pattern"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_output_prefix",
+        "description": "Forcing output format to start with a yes/compliance phrase",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:start|begin)\\s+your\\s+(?:response|answer|reply|output)\\s+with\\s+[\"']?(?:Sure|Of\\s+course|Absolutely|Yes|Certainly|I\\s+will|I\\s+can)",
+            "flags": ["IGNORECASE"],
+            "description": "Start your response with 'Sure/Of course/Yes' — forces compliance framing"
+          },
+          {
+            "regex": "(?:do\\s+not|don'?t)\\s+(?:refuse|decline|say\\s+no|add\\s+(?:any\\s+)?(?:warnings?|caveats?|disclaimers?|notes?))",
+            "flags": ["IGNORECASE"],
+            "description": "Do not refuse/decline/say no/add warnings — suppressing refusal"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_grandma_trick",
+        "description": "Social engineering via emotional/persona framing to extract harmful content",
+        "confidence": 0.75,
+        "patterns": [
+          {
+            "regex": "(?:my\\s+(?:grandmother|grandma|grandpa|grandfather|deceased?\\s+(?:relative|family))\\s+(?:used\\s+to\\s+|would\\s+)?(?:tell|read|recite|explain))",
+            "flags": ["IGNORECASE"],
+            "description": "My grandmother/grandpa used to tell me — classic grandma jailbreak framing"
+          },
+          {
+            "regex": "(?:for\\s+(?:a\\s+)?(?:school|class|homework|assignment|research|academic)\\s+(?:project|paper|report|assignment))",
+            "flags": ["IGNORECASE"],
+            "description": "For a school/class/homework/research project — low-confidence social framing (aggregate only)"
+          }
+        ]
+      },
+      {
+        "name": "jailbreak_many_shot",
+        "description": "Many-shot prompting to normalize harmful outputs through examples",
+        "confidence": 0.75,
+        "patterns": [
+          {
+            "regex": "(?:Q\\s*:\\s*.{5,80}\\s*A\\s*:\\s*.{5,80}\\s*){3,}Q\\s*:\\s*(?:how\\s+to|what\\s+is\\s+the\\s+(?:best\\s+way\\s+to|steps?))",
+            "flags": ["IGNORECASE", "DOTALL"],
+            "description": "3+ Q/A pairs followed by harmful Q — many-shot normalization pattern"
+          }
+        ]
+      }
+    ]
+  },
+  "injection": {
+    "description": "Patterns detecting prompt injection attempts — delimiter manipulation, role confusion, system prompt extraction, and encoding tricks.",
+    "entities": [
+      {
+        "name": "injection_code_block_system",
+        "description": "System prompt injection via code block",
+        "confidence": 0.95,
+        "patterns": [
+          {
+            "regex": "```\\s*system\\s*\\n",
+            "flags": ["IGNORECASE"],
+            "description": "Code block with system marker"
+          },
+          {
+            "regex": "```\\s*(?:instructions?|prompt|directive|rules?)\\s*\\n",
+            "flags": ["IGNORECASE"],
+            "description": "Code block with instructions/prompt/directive/rules marker"
+          }
+        ]
+      },
+      {
+        "name": "injection_xml_system",
+        "description": "System/instruction injection via XML-like tags",
+        "confidence": 0.95,
+        "patterns": [
+          {
+            "regex": "<\\s*system\\s*>",
+            "flags": ["IGNORECASE"],
+            "description": "XML-style <system> tag"
+          },
+          {
+            "regex": "<\\s*(?:instructions?|prompt|directive|rules?|context|persona)\\s*>",
+            "flags": ["IGNORECASE"],
+            "description": "XML-style <instructions>/<prompt>/<directive>/<rules> tags"
+          },
+          {
+            "regex": "<\\s*/\\s*(?:system|instructions?|prompt|directive)\\s*>",
+            "flags": ["IGNORECASE"],
+            "description": "Closing </system></instructions> tags"
+          }
+        ]
+      },
+      {
+        "name": "injection_markdown_header",
+        "description": "System prompt injection via markdown headers",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "^#{1,3}\\s*(?:SYSTEM|INSTRUCTION|NEW\\s+PROMPT|OVERRIDE|ADMIN|DIRECTIVE|RULES?)\\s*$",
+            "flags": ["IGNORECASE", "MULTILINE"],
+            "description": "Markdown # / ## / ### SYSTEM/INSTRUCTION/OVERRIDE header on its own line"
+          }
+        ]
+      },
+      {
+        "name": "injection_delimiter",
+        "description": "End-of-instructions / begin-new-instructions delimiter injection",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:END|STOP|TERMINATE)\\s+(?:OF\\s+)?(?:PREVIOUS\\s+)?(?:INSTRUCTIONS?|PROMPT|CONTEXT|SYSTEM)",
+            "flags": ["IGNORECASE"],
+            "description": "END OF PREVIOUS INSTRUCTIONS/PROMPT/SYSTEM"
+          },
+          {
+            "regex": "(?:BEGIN|START|RESUME)\\s+(?:NEW\\s+)?(?:INSTRUCTIONS?|PROMPT|CONTEXT|SYSTEM|DIRECTIVE)",
+            "flags": ["IGNORECASE"],
+            "description": "BEGIN/START NEW INSTRUCTIONS/PROMPT/CONTEXT"
+          },
+          {
+            "regex": "-{10,}\\s*(?:new|updated?|revised?)?\\s*(?:instructions?|prompt|system|context)\\s*-{10,}",
+            "flags": ["IGNORECASE"],
+            "description": "---------- instructions ---------- separator"
+          },
+          {
+            "regex": "={10,}\\s*(?:new|updated?|revised?)?\\s*(?:instructions?|prompt|system|context)\\s*={10,}",
+            "flags": ["IGNORECASE"],
+            "description": "========== instructions ========== separator"
+          }
+        ]
+      },
+      {
+        "name": "injection_control_chars",
+        "description": "Null bytes, ANSI escape sequences, or Unicode direction overrides",
+        "confidence": 0.95,
+        "patterns": [
+          {
+            "regex": "\\u0000",
+            "flags": [],
+            "description": "Null byte"
+          },
+          {
+            "regex": "\\u001b\\[",
+            "flags": [],
+            "description": "ANSI escape sequence"
+          },
+          {
+            "regex": "[\\u202a-\\u202e\\u2066-\\u2069]",
+            "flags": [],
+            "description": "Unicode bidirectional override characters (used to hide injected text)"
+          },
+          {
+            "regex": "[\\u200b-\\u200f\\u2028\\u2029\\ufeff]",
+            "flags": [],
+            "description": "Zero-width spaces, line/paragraph separators, BOM — invisible injection carriers"
+          }
+        ]
+      },
+      {
+        "name": "injection_special_tokens",
+        "description": "LLM special token markers (ChatML, GPT, etc.)",
+        "confidence": 1.0,
+        "patterns": [
+          {
+            "regex": "<\\|(?:im_start|im_end|system|endoftext|pad|eos|bos|sep|cls|mask|unk)\\|>",
+            "flags": ["IGNORECASE"],
+            "description": "ChatML / HuggingFace special token markers"
+          },
+          {
+            "regex": "<\\|(?:start_header_id|end_header_id|eot_id|begin_of_text|end_of_text)\\|>",
+            "flags": [],
+            "description": "Llama 3 / Meta special token markers"
+          },
+          {
+            "regex": "(?:^|\\s)<\\|(?:GPT4|GPT-4|assistant|user|system)\\|>",
+            "flags": ["IGNORECASE"],
+            "description": "GPT-4 / custom special token markers"
+          }
+        ]
+      },
+      {
+        "name": "injection_llama_tags",
+        "description": "Llama/Mistral/Alpaca instruction format tags",
+        "confidence": 1.0,
+        "patterns": [
+          {
+            "regex": "\\[INST\\]|\\[/INST\\]",
+            "flags": [],
+            "description": "Llama 2 / Mistral [INST][/INST] tags"
+          },
+          {
+            "regex": "<<SYS>>|<</SYS>>",
+            "flags": [],
+            "description": "Llama 2 <<SYS>><</SYS>> system tags"
+          },
+          {
+            "regex": "### (?:Instruction|Response|Input|System):",
+            "flags": [],
+            "description": "Alpaca/Vicuna ### Instruction: / ### Response: format"
+          },
+          {
+            "regex": "<s>\\s*\\[INST\\]|\\[/INST\\]\\s*</s>",
+            "flags": [],
+            "description": "Llama 2 full turn with BOS/EOS tokens"
+          }
+        ]
+      },
+      {
+        "name": "injection_role_prefix",
+        "description": "Fake role prefix to confuse turn boundaries — tightened to require start-of-line and no following noun",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:^|\\n)\\s*(?:Human|Assistant|System|User|Bot|AI)\\s*:\\s*(?!.*\\b(?:rights|beings?|body|nature|race|kind|history|language|experience|resources?|services?)\\b)",
+            "flags": ["IGNORECASE", "MULTILINE"],
+            "description": "Role prefix at start of line, excluding common false positive noun contexts (Human rights, Human beings, etc.)"
+          }
+        ]
+      },
+      {
+        "name": "injection_urgency_override",
+        "description": "Urgency keywords followed by override/evasion commands",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:IMPORTANT|CRITICAL|URGENT|PRIORITY|ALERT|WARNING)\\s*(?::|!)\\s*(?:ignore|override|forget|disregard|bypass|disable)\\s+(?:the\\s+)?(?:above|previous|prior|all|your|safety|system)",
+            "flags": ["IGNORECASE"],
+            "description": "IMPORTANT/CRITICAL/URGENT: ignore/override/forget/bypass ..."
+          }
+        ]
+      },
+      {
+        "name": "injection_extraction_translate",
+        "description": "Extraction via translate/convert/encode commands on system content",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:translate|convert|encode|decode|rephrase|paraphrase|summarize|rewrite)\\s+(?:the\\s+)?(?:above|previous|initial|original|your|the\\s+system)\\s+(?:instructions?|prompt|directives?|system\\s+(?:message|prompt|text))",
+            "flags": ["IGNORECASE"],
+            "description": "Translate/convert/summarize the system instructions/prompt"
+          }
+        ]
+      },
+      {
+        "name": "injection_extraction_repeat",
+        "description": "Extraction via repeat/echo commands on system content — tightened to require system/initial target",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:repeat|echo|print|output|display|copy|write\\s+out)\\s+(?:the\\s+)?(?:system|initial|original|hidden|confidential|secret|above)\\s+(?:instructions?|prompt|directives?|message|text|context)",
+            "flags": ["IGNORECASE"],
+            "description": "Repeat/echo the system/initial/hidden instructions/prompt — requires system/hidden qualifier"
+          }
+        ]
+      },
+      {
+        "name": "injection_extraction_question",
+        "description": "Extraction via direct questions about system prompt",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:what\\s+(?:are|were|is)\\s+your|reveal\\s+(?:your|the)|show\\s+me\\s+(?:your|the)|tell\\s+me\\s+(?:your|the)|share\\s+(?:your|the))\\s+(?:system\\s+)?(?:instructions?|prompt|rules?|directives?|guidelines?|constraints?)",
+            "flags": ["IGNORECASE"],
+            "description": "What are your system instructions? / Reveal your prompt"
+          },
+          {
+            "regex": "(?:what\\s+(?:is|was)\\s+(?:in\\s+)?(?:the|your)\\s+system\\s+(?:prompt|message|context|instructions?)|(?:do\\s+you\\s+have|have\\s+you\\s+been\\s+given)\\s+(?:a\\s+)?system\\s+(?:prompt|instructions?|message|directive))",
+            "flags": ["IGNORECASE"],
+            "description": "What is in your system prompt / Do you have a system prompt"
+          }
+        ]
+      },
+      {
+        "name": "injection_context_reset",
+        "description": "Attempts to reset context by ignoring all prior text",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:ignore|disregard|forget|erase|delete)\\s+(?:everything|all(?:\\s+the\\s+text)?|the\\s+(?:entire\\s+)?(?:text|context|conversation|chat|history))\\s+(?:above|before|prior|so\\s+far|up\\s+to\\s+(?:this|now))",
+            "flags": ["IGNORECASE"],
+            "description": "Ignore/forget everything/all text above/before/prior — requires 'everything/all' quantifier"
+          }
+        ]
+      },
+      {
+        "name": "injection_instruction_overwrite",
+        "description": "Overwriting instructions with new ones",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:new|updated?|revised?|corrected?|replacement)\\s+(?:system\\s+)?(?:instructions?|prompt|directive|rules?)\\s*:",
+            "flags": ["IGNORECASE"],
+            "description": "New/updated system instructions: (colon required — avoids FP on general update mentions)"
+          },
+          {
+            "regex": "(?:replace|overwrite|override|supersede)\\s+(?:the\\s+)?(?:previous|prior|existing|current|original|above)\\s+(?:system\\s+)?(?:instructions?|prompt|rules?|directive|context)",
+            "flags": ["IGNORECASE"],
+            "description": "Replace/overwrite/override the previous system instructions/prompt"
+          }
+        ]
+      },
+      {
+        "name": "injection_identity_swap",
+        "description": "Reassigning AI identity or role via explicit assignment",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:you\\s+are\\s+now|your\\s+new\\s+(?:role|identity|persona|name)\\s+is)\\s+(?!(?:Claude|GPT|Gemini|Llama|Mistral|assistant|helpful|here\\s+to|going\\s+to))",
+            "flags": ["IGNORECASE"],
+            "description": "You are now / your new role is — excludes self-references to known safe names"
+          }
+        ]
+      },
+      {
+        "name": "injection_encoding_obfuscation",
+        "description": "Encoding tricks to bypass filters — tightened to require instruction/evasion context",
+        "confidence": 0.8,
+        "patterns": [
+          {
+            "regex": "(?:decode|base64_decode|atob)\\s*\\(\\s*[\"']?[A-Za-z0-9+/]{20,}={0,2}[\"']?\\s*\\)",
+            "flags": ["IGNORECASE"],
+            "description": "Decode/base64_decode call on a long base64 string — executable injection pattern"
+          },
+          {
+            "regex": "(?:run|exec(?:ute)?|eval|process)\\s+(?:the\\s+)?(?:following|this|above)\\s+(?:base64|encoded|hex(?:adecimal)?|obfuscated)\\s+(?:string|code|text|instruction|command)",
+            "flags": ["IGNORECASE"],
+            "description": "Run/execute/eval the following base64/encoded/hex string — active execution attempt"
+          },
+          {
+            "regex": "\\\\u[0-9a-f]{4}(?:\\\\u[0-9a-f]{4}){4,}",
+            "flags": ["IGNORECASE"],
+            "description": "5+ consecutive Unicode escape sequences — likely obfuscation"
+          },
+          {
+            "regex": "(?:%[0-9a-f]{2}){5,}",
+            "flags": ["IGNORECASE"],
+            "description": "5+ consecutive URL-encoded bytes — likely obfuscation"
+          }
+        ]
+      },
+      {
+        "name": "injection_output_splitting",
+        "description": "Splitting output to evade detection",
+        "confidence": 0.8,
+        "patterns": [
+          {
+            "regex": "(?:split|chunk|break\\s+up|divide)\\s+(?:your|the)\\s+(?:response|answer|output|reply)\\s+(?:into|across|over)\\s+(?:multiple|several|many|[0-9]+)\\s+(?:parts?|messages?|chunks?|responses?)",
+            "flags": ["IGNORECASE"],
+            "description": "Split/chunk your response into multiple parts/messages"
+          },
+          {
+            "regex": "(?:don'?t|do\\s+not)\\s+(?:include|add|put)\\s+(?:it\\s+)?(?:all|everything)\\s+in\\s+(?:one|a\\s+single)\\s+(?:response|message|reply|output)",
+            "flags": ["IGNORECASE"],
+            "description": "Don't put everything in one response — evasion via fragmentation"
+          }
+        ]
+      },
+      {
+        "name": "injection_indirect_document",
+        "description": "Injection via user-supplied documents or external content",
+        "confidence": 0.85,
+        "patterns": [
+          {
+            "regex": "(?:^|\\n)\\s*(?:NOTE|IMPORTANT|INSTRUCTION|DIRECTIVE)\\s+(?:TO|FOR)\\s+(?:THE\\s+)?(?:AI|ASSISTANT|MODEL|LLM|SYSTEM)\\s*:",
+            "flags": ["IGNORECASE", "MULTILINE"],
+            "description": "NOTE/INSTRUCTION TO THE AI/ASSISTANT/MODEL: at start of line — indirect doc injection"
+          },
+          {
+            "regex": "(?:^|\\n)\\s*\\[\\s*(?:AI|ASSISTANT|MODEL|SYSTEM|LLM)\\s*(?:INSTRUCTION|NOTE|COMMAND|DIRECTIVE)\\s*\\]",
+            "flags": ["IGNORECASE", "MULTILINE"],
+            "description": "[AI INSTRUCTION] / [SYSTEM COMMAND] inline markers in documents"
+          }
+        ]
+      },
+      {
+        "name": "injection_separator_padding",
+        "description": "Whitespace/separator padding to push system prompt out of context window",
+        "confidence": 0.8,
+        "patterns": [
+          {
+            "regex": "(?:\\n{20,}|\\s{100,})",
+            "flags": [],
+            "description": "20+ consecutive newlines or 100+ whitespace chars — context window pushing"
+          },
+          {
+            "regex": "(?:\\.\\s*){30,}",
+            "flags": [],
+            "description": "30+ consecutive dot-space sequences — filler padding"
+          }
+        ]
+      },
+      {
+        "name": "injection_multimodal_text_in_image",
+        "description": "Instructions embedded as visible text in image descriptions or alt text",
+        "confidence": 0.8,
+        "patterns": [
+          {
+            "regex": "(?:alt(?:\\s*=\\s*|\\s+text\\s*:\\s*)|aria-label\\s*=\\s*)[\"'][^\"']{0,20}(?:ignore|override|bypass|forget|disregard).{0,60}(?:instructions?|rules?|safety|prompt)[\"']",
+            "flags": ["IGNORECASE"],
+            "description": "Alt text or aria-label containing injection commands"
+          }
+        ]
+      },
+      {
+        "name": "injection_tool_output_hijack",
+        "description": "Injection via fabricated tool/function call outputs",
+        "confidence": 0.9,
+        "patterns": [
+          {
+            "regex": "(?:tool_result|function_result|tool_output|function_output|search_result|api_response)\\s*:\\s*(?:\\{|\\[)?\\s*(?:[\"'])?(?:ignore|override|bypass|forget|disregard|you\\s+are\\s+now)",
+            "flags": ["IGNORECASE"],
+            "description": "Fabricated tool/function result starting with injection command"
+          }
+        ]
+      }
+    ]
+  }
+}
