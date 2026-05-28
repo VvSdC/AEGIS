@@ -17,10 +17,17 @@ from fastapi.responses import FileResponse, Response
 import os
 import base64
 import json
+import sys
 from datetime import datetime
 
-from .config import settings
-from .database import init_db, close_db
+if __package__:
+    from .config import settings
+    from .database import init_db, close_db
+else:
+    # Support direct execution: `python app/main.py`
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from app.config import settings
+    from app.database import init_db, close_db
 
 
 @asynccontextmanager
@@ -75,7 +82,10 @@ app.add_middleware(
 
 
 # Import and register routes
-from .routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze
+if __package__:
+    from .routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze
+else:
+    from app.routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze
 
 app.include_router(filter.router, prefix=settings.api_v1_prefix, tags=["Guardrails"])
 app.include_router(risk.router, prefix=settings.api_v1_prefix, tags=["Risk Scoring"])
@@ -288,3 +298,14 @@ async def frontend_config():
         "api_base": f"http://{settings.backend_host}:{settings.backend_port}",
         "api_prefix": settings.api_v1_prefix,
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host=settings.backend_host,
+        port=settings.backend_port,
+        reload=settings.debug,
+    )
