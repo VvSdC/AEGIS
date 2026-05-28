@@ -35,8 +35,53 @@ from ..engines.inference_providers import (
 )
 from ..engines.region_policies import build_compliance_header, get_policies_for_region
 from ..security import require_authenticated_user
+from ..telemetry import summarize_guardrail_matches, entities_from_matches
 
 router = APIRouter()
+
+
+def _build_tier1_result(tier1_filter, latency_seconds: float) -> Tier1Result:
+    """Build tier-1 API payload; withhold raw content when blocked."""
+    entities = entities_from_matches(tier1_filter.matches)
+    matches = [
+        FilterMatch(
+            filter_name=m.filter_name,
+            category=m.category,
+            matched_text=m.matched_text,
+            replacement=m.replacement,
+            confidence=m.confidence,
+            tier=m.tier,
+        )
+        for m in tier1_filter.matches
+    ]
+    if tier1_filter.blocked:
+        matches = [
+            FilterMatch(
+                filter_name=m.filter_name,
+                category=m.category,
+                matched_text="",
+                replacement=None,
+                confidence=m.confidence,
+                tier=m.tier,
+            )
+            for m in tier1_filter.matches
+        ]
+        return Tier1Result(
+            blocked=True,
+            block_reason=getattr(tier1_filter, "block_reason", None),
+            matches=matches,
+            identified_entities=entities,
+            filtered_text="",
+            latency_seconds=round(latency_seconds, 4),
+        )
+    return Tier1Result(
+        blocked=False,
+        block_reason=None,
+        matches=matches,
+        identified_entities=entities,
+        filtered_text=tier1_filter.filtered_text,
+        latency_seconds=round(latency_seconds, 4),
+    )
 
 REGION_MAP = {
     "india": "INDIA",
@@ -91,23 +136,8 @@ async def analyze_prompt(
     )
     tier1_latency = time.perf_counter() - tier1_start
 
-    tier1 = Tier1Result(
-        blocked=tier1_filter.blocked,
-        block_reason=getattr(tier1_filter, "block_reason", None),
-        matches=[
-            FilterMatch(
-                filter_name=m.filter_name,
-                category=m.category,
-                matched_text=m.matched_text,
-                replacement=m.replacement,
-                confidence=m.confidence,
-                tier=m.tier,
-            )
-            for m in tier1_filter.matches
-        ],
-        filtered_text=tier1_filter.filtered_text,
-        latency_seconds=round(tier1_latency, 4),
-    )
+    tier1 = _build_tier1_result(tier1_filter, tier1_latency)
+    tier1_telemetry = summarize_guardrail_matches(tier1_filter.matches)
 
     if tier1.blocked:
         total_latency = time.perf_counter() - start_time
@@ -120,12 +150,13 @@ async def analyze_prompt(
                 "region": request.region,
                 "reason": tier1.block_reason,
                 "latency_s": round(total_latency, 4),
+                **tier1_telemetry,
             },
         )
         return AnalyzeResponse(
             allow=False,
             response=f"Request blocked by Tier 1 guardrails: {tier1.block_reason}",
-            original_prompt=request.prompt,
+            original_prompt="",
             tier1=tier1,
             tier2=None,
             output_guardrail=None,
@@ -170,12 +201,13 @@ async def analyze_prompt(
                     "reason": tier2_reason,
                     "policies": policy_names,
                     "latency_s": round(total_latency, 4),
+                    **tier1_telemetry,
                 },
             )
             return AnalyzeResponse(
                 allow=False,
                 response=f"Request blocked by Tier 2 analysis: {tier2_reason}",
-                original_prompt=request.prompt,
+                original_prompt="",
                 tier1=tier1,
                 tier2=tier2,
                 output_guardrail=None,
@@ -287,6 +319,7 @@ async def analyze_prompt(
             "output_guardrail_mode": output_guardrail_mode,
             "output_safe_to_use": output_guardrail_result.safe_to_use if output_guardrail_result else True,
             "latency_s": round(total_latency, 4),
+            **tier1_telemetry,
         },
     )
 

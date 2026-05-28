@@ -329,6 +329,60 @@ class DashboardResponse(BaseModel):
     recent_activity: List[Dict[str, Any]]
 
 
+class LogsDashboardSummary(BaseModel):
+    """Aggregated metrics for the admin logs dashboard."""
+    period_days: int
+    total_audit_events: int
+    total_filter_requests: int
+    blocked_filter_requests: int
+    analyze_total: int
+    analyze_allowed: int
+    analyze_blocked: int
+    pii_detections: int
+    jailbreak_detections: int
+    injection_detections: int
+    toxicity_detections: int
+
+
+class LogsTrafficDay(BaseModel):
+    """Daily traffic bucket for charts."""
+    date: str
+    audit_events: int
+    filter_requests: int
+    blocked: int
+    pii_hits: int
+
+
+class LogsDashboardRates(BaseModel):
+    """Percentage rates for dashboard health cards."""
+    analyze_block_rate: float = 0.0
+    filter_block_rate: float = 0.0
+    pii_hit_rate: float = 0.0
+
+
+class LogsActorCount(BaseModel):
+    actor: str
+    count: int
+
+
+class LogsDashboardResponse(BaseModel):
+    """Admin telemetry dashboard payload."""
+    viewer: str
+    period_days: int
+    generated_at: datetime
+    summary: LogsDashboardSummary
+    rates: LogsDashboardRates
+    top_actors: List[LogsActorCount]
+    event_type_counts: Dict[str, int]
+    pii_by_type: Dict[str, int]
+    threat_by_category: Dict[str, int]
+    traffic_by_day: List[LogsTrafficDay]
+    inference_by_provider: Dict[str, int]
+    region_breakdown: Dict[str, int]
+    direction_breakdown: Dict[str, int]
+    recent_entries: List[Dict[str, Any]]
+
+
 # =============================================================================
 # Playbook Schemas
 # =============================================================================
@@ -456,6 +510,10 @@ class Tier1Result(BaseModel):
     blocked: bool = False
     block_reason: Optional[str] = None
     matches: List[FilterMatch] = []
+    identified_entities: List[str] = Field(
+        default_factory=list,
+        description="Entity types detected (no raw matched content when blocked)",
+    )
     filtered_text: str
     latency_seconds: float
 

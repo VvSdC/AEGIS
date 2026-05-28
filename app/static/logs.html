@@ -3,44 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AEGIS - Telemetry Logs</title>
+    <title>AEGIS - Telemetry Dashboard</title>
     <link rel="stylesheet" href="/app.css">
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
-    <header class="bg-slate-950/80 border-b border-slate-800 sticky top-0 z-20 backdrop-blur">
-        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <header class="app-shell-header sticky top-0 z-20 backdrop-blur">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between flex-wrap gap-3">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold text-sm">A</div>
                 <div>
-                    <h1 class="text-lg font-semibold tracking-tight">AEGIS Logs</h1>
-                    <p class="text-xs text-slate-400">Admin telemetry (audit vault)</p>
+                    <h1 class="text-lg font-semibold tracking-tight">AEGIS Telemetry</h1>
+                    <p class="text-xs text-slate-400">Traffic, PII, and audit insights</p>
                 </div>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 flex-wrap">
+                <label class="text-xs text-slate-400 flex items-center gap-2">
+                    Period
+                    <select id="period-select" class="logs-period-select">
+                        <option value="1">24 hours</option>
+                        <option value="7" selected>7 days</option>
+                        <option value="30">30 days</option>
+                    </select>
+                </label>
+                <span id="viewer-label" class="text-xs text-slate-500 hidden sm:inline"></span>
+                <span id="updated-label" class="text-xs text-slate-600 hidden md:inline"></span>
                 <a href="/" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Console</a>
-                <button id="refresh-logs-btn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md text-xs">Refresh</button>
+                <button id="refresh-logs-btn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md text-xs text-white">Refresh</button>
                 <button id="logout-btn" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Logout</button>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-6 py-8">
+    <main class="max-w-7xl mx-auto px-6 py-8 space-y-6">
         <div id="access-denied" class="hidden section-card p-6">
             <p class="text-sm text-red-400">Admin access required. Redirecting…</p>
         </div>
-        <div id="logs-panel" class="section-card p-6 hidden">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-base font-semibold text-slate-100">Telemetry Logs</h2>
-                <span id="viewer-label" class="text-xs text-slate-400"></span>
+
+        <div id="logs-loading" class="section-card p-8 text-center text-slate-400 text-sm">Loading dashboard…</div>
+
+        <div id="logs-dashboard" class="hidden space-y-6">
+            <div class="logs-hero section-card">
+                <div>
+                    <h2>Security &amp; traffic overview</h2>
+                    <p id="hero-subtitle">Aggregated audit vault metrics for the selected period.</p>
+                </div>
+                <div class="logs-health-grid">
+                    <div class="logs-health-card">
+                        <div class="rate text-red-400" id="rate-analyze-block">0%</div>
+                        <div class="label">Analyze block rate</div>
+                    </div>
+                    <div class="logs-health-card">
+                        <div class="rate text-amber-400" id="rate-filter-block">0%</div>
+                        <div class="label">Filter block rate</div>
+                    </div>
+                    <div class="logs-health-card">
+                        <div class="rate text-blue-400" id="rate-pii">0%</div>
+                        <div class="label">PII hit rate</div>
+                    </div>
+                </div>
             </div>
-            <pre id="logs-content" class="json-view mono max-h-80 overflow-y-auto" style="max-height:70vh">Loading…</pre>
+
+            <p class="logs-section-label">Volume</p>
+            <div class="logs-kpi-grid" id="kpi-grid"></div>
+
+            <div class="logs-dash-grid two-col">
+                <div class="logs-chart-panel section-card">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-1">Traffic over time</h3>
+                    <p class="text-xs text-slate-500 mb-4">Audit events + filter requests per day</p>
+                    <div id="traffic-chart"></div>
+                    <div class="logs-donut-wrap" id="analyze-donut-wrap"></div>
+                </div>
+                <div class="logs-chart-panel section-card">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-1">PII types detected</h3>
+                    <p class="text-xs text-slate-500 mb-4">Entity categories from guardrail matches</p>
+                    <div id="pii-chart"></div>
+                </div>
+            </div>
+
+            <div class="logs-dash-grid two-col">
+                <div class="logs-chart-panel section-card">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-4">Threat categories</h3>
+                    <div id="threat-chart"></div>
+                </div>
+                <div class="logs-chart-panel section-card">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-4">Top actors</h3>
+                    <div id="actors-list"></div>
+                </div>
+            </div>
+
+            <div class="logs-dash-grid two-col">
+                <div class="logs-chart-panel section-card">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-4">Inference providers</h3>
+                    <div id="provider-chart"></div>
+                </div>
+                <div class="logs-chart-panel section-card">
+                    <h3 class="text-sm font-semibold text-slate-200 mb-4">Regions</h3>
+                    <div id="region-chart"></div>
+                    <h3 class="text-sm font-semibold text-slate-200 mb-4 mt-6">Event types</h3>
+                    <div id="events-chart"></div>
+                </div>
+            </div>
+
+            <div class="section-card p-6">
+                <div class="section-title mb-2">
+                    <h2 class="text-base font-semibold text-slate-100">Audit event log</h2>
+                    <span class="text-xs text-slate-400" id="events-count-label">—</span>
+                </div>
+                <div class="logs-filter-bar">
+                    <label class="text-xs text-slate-400 flex items-center gap-2">
+                        Filter by event
+                        <select id="event-filter">
+                            <option value="">All events</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="logs-table-wrap">
+                    <table class="logs-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Event</th>
+                                <th>Actor</th>
+                                <th>System</th>
+                                <th>Summary</th>
+                            </tr>
+                        </thead>
+                        <tbody id="events-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </main>
 
     <script src="config.js"></script>
     <script>
         const API_BASE = CONFIG.BACKEND_URL;
-        const FETCH_TIMEOUT_MS = 8000;
+        const FETCH_TIMEOUT_MS = 12000;
+        let dashboardData = null;
+        let allEntries = [];
 
         async function fetchWithTimeout(url, options = {}) {
             const controller = new AbortController();
@@ -55,14 +155,236 @@
             }
         }
 
-        async function loadLogs() {
-            const content = document.getElementById('logs-content');
+        function fmtTime(iso) {
             try {
-                const res = await fetchWithTimeout(`${API_BASE}/api/v1/logs?limit=100`);
-                if (res.status === 401) {
-                    window.location.replace('/auth');
-                    return;
-                }
+                return new Date(iso).toLocaleString(undefined, {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                });
+            } catch {
+                return iso;
+            }
+        }
+
+        function shortDetails(details) {
+            if (!details || typeof details !== 'object') return '—';
+            const parts = [];
+            if (details.region) parts.push(details.region);
+            if (details.inference_provider) parts.push(details.inference_provider);
+            if (details.model) parts.push(details.model);
+            if (details.reason) parts.push(details.reason);
+            if (details.pii_types?.length) parts.push(`PII: ${details.pii_types.join(', ')}`);
+            if (details.latency_s !== undefined) parts.push(`${details.latency_s}s`);
+            if (details.match_count) parts.push(`${details.match_count} matches`);
+            return parts.length ? parts.join(' · ') : '—';
+        }
+
+        function eventBadgeClass(type) {
+            if (!type) return '';
+            if (type.includes('blocked')) return 'blocked';
+            if (type === 'filter') return 'filter';
+            if (type.includes('success')) return 'success';
+            return '';
+        }
+
+        function renderBarChart(containerId, items, { emptyLabel = 'No data yet', variant = '' } = {}) {
+            const el = document.getElementById(containerId);
+            if (!items.length) {
+                el.innerHTML = `<p class="logs-empty-hint">${emptyLabel}</p>`;
+                return;
+            }
+            const max = Math.max(...items.map(i => i.value), 1);
+            el.innerHTML = items.map(({ label, value }) => {
+                const pct = Math.round((value / max) * 100);
+                return `
+                    <div class="logs-bar-row">
+                        <span class="text-slate-400 truncate" title="${label}">${label}</span>
+                        <div class="logs-bar-track"><div class="logs-bar-fill${variant ? ' ' + variant : ''}" style="width:${pct}%"></div></div>
+                        <span class="text-slate-300 text-right font-medium">${value}</span>
+                    </div>`;
+            }).join('');
+        }
+
+        function dictToBars(obj, limit = 8) {
+            return Object.entries(obj || {})
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, limit)
+                .map(([label, value]) => ({ label, value }));
+        }
+
+        function renderKpis(summary) {
+            const groups = [
+                { title: 'Traffic', cards: [
+                    { label: 'Audit events', value: summary.total_audit_events, accent: 'accent-blue' },
+                    { label: 'Filter requests', value: summary.total_filter_requests, accent: 'accent-blue' },
+                ]},
+                { title: 'Security', cards: [
+                    { label: 'PII hits', value: summary.pii_detections, accent: 'accent-amber' },
+                    { label: 'Blocked filters', value: summary.blocked_filter_requests, accent: 'accent-red' },
+                    { label: 'Jailbreak', value: summary.jailbreak_detections, accent: 'accent-amber' },
+                    { label: 'Injection', value: summary.injection_detections, accent: 'accent-red' },
+                ]},
+                { title: 'Console', cards: [
+                    { label: 'Analyze runs', value: summary.analyze_total, accent: 'accent-emerald' },
+                    { label: 'Allowed', value: summary.analyze_allowed, accent: 'accent-emerald' },
+                    { label: 'Blocked', value: summary.analyze_blocked, accent: 'accent-red' },
+                ]},
+            ];
+            document.getElementById('kpi-grid').innerHTML = groups.flatMap(g =>
+                g.cards.map(c => `
+                <div class="logs-kpi ${c.accent}">
+                    <div class="kpi-value">${Number(c.value).toLocaleString()}</div>
+                    <div class="kpi-label">${c.label}</div>
+                </div>`)
+            ).join('');
+        }
+
+        function renderAnalyzeDonut(summary) {
+            const wrap = document.getElementById('analyze-donut-wrap');
+            const total = summary.analyze_total;
+            if (!total) {
+                wrap.innerHTML = '';
+                return;
+            }
+            const blockedPct = Math.round((summary.analyze_blocked / total) * 100);
+            const allowedPct = 100 - blockedPct;
+            wrap.innerHTML = `
+                <div class="logs-donut" style="background: conic-gradient(#34d399 0 ${allowedPct}%, #f87171 ${allowedPct}% 100%)">
+                    <span class="text-slate-900" style="background:#0f172a;border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center;color:#e2e8f0;font-size:0.7rem">${allowedPct}% ok</span>
+                </div>
+                <div class="text-xs text-slate-400">
+                    <p><span class="text-emerald-400">●</span> Allowed: ${summary.analyze_allowed}</p>
+                    <p class="mt-1"><span class="text-red-400">●</span> Blocked: ${summary.analyze_blocked}</p>
+                </div>`;
+        }
+
+        function renderTrafficChart(trafficByDay) {
+            const el = document.getElementById('traffic-chart');
+            if (!trafficByDay.length) {
+                el.innerHTML = '<p class="logs-empty-hint">No traffic yet. Run analyze or filter requests from the console.</p>';
+                return;
+            }
+            const max = Math.max(...trafficByDay.map(d => d.audit_events + d.filter_requests), 1);
+            el.innerHTML = trafficByDay.map(d => {
+                const total = d.audit_events + d.filter_requests;
+                const pct = Math.round((total / max) * 100);
+                return `
+                    <div class="logs-bar-row">
+                        <span class="text-slate-400">${d.date.slice(5)}</span>
+                        <div class="logs-bar-track"><div class="logs-bar-fill ok" style="width:${pct}%"></div></div>
+                        <span class="text-slate-300 text-right text-xs" title="total / blocked / pii">${total}<br><span class="text-slate-500">${d.blocked}b · ${d.pii_hits}pii</span></span>
+                    </div>`;
+            }).join('');
+        }
+
+        function renderActors(actors) {
+            const el = document.getElementById('actors-list');
+            if (!actors?.length) {
+                el.innerHTML = '<p class="logs-empty-hint">No actor activity in this period.</p>';
+                return;
+            }
+            el.innerHTML = actors.map(a => `
+                <div class="logs-actor-row">
+                    <span class="text-slate-300">${a.actor}</span>
+                    <span class="text-slate-500 font-medium">${a.count}</span>
+                </div>
+            `).join('');
+        }
+
+        function populateEventFilter(eventCounts) {
+            const sel = document.getElementById('event-filter');
+            const current = sel.value;
+            sel.innerHTML = '<option value="">All events</option>' +
+                Object.keys(eventCounts || {}).sort().map(t =>
+                    `<option value="${t}">${t} (${eventCounts[t]})</option>`
+                ).join('');
+            sel.value = current;
+        }
+
+        function renderEventsTable(entries) {
+            const tbody = document.getElementById('events-tbody');
+            const filter = document.getElementById('event-filter').value;
+            const filtered = filter ? entries.filter(e => e.event_type === filter) : entries;
+            document.getElementById('events-count-label').textContent =
+                `${filtered.length} shown${filter ? ` (${filter})` : ''}`;
+
+            if (!filtered.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-slate-500 text-center py-6">No events match this filter.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map((e, i) => `
+                <tr class="logs-row-expandable" data-idx="${i}">
+                    <td class="whitespace-nowrap text-slate-400">${fmtTime(e.timestamp)}</td>
+                    <td><span class="logs-event-badge ${eventBadgeClass(e.event_type)}">${e.event_type}</span></td>
+                    <td>${e.actor || '—'}</td>
+                    <td class="text-slate-400">${e.system_name || '—'}</td>
+                    <td class="logs-details-cell">${shortDetails(e.details)}</td>
+                </tr>
+                <tr class="logs-row-details hidden" data-detail-idx="${i}">
+                    <td colspan="5"><pre class="text-xs text-slate-400 mono overflow-x-auto">${JSON.stringify(e.details || {}, null, 2)}</pre></td>
+                </tr>
+            `).join('');
+
+            tbody.querySelectorAll('.logs-row-expandable').forEach(row => {
+                row.addEventListener('click', () => {
+                    const idx = row.getAttribute('data-idx');
+                    const detail = tbody.querySelector(`[data-detail-idx="${idx}"]`);
+                    detail?.classList.toggle('hidden');
+                });
+            });
+        }
+
+        function renderDashboard(data) {
+            dashboardData = data;
+            allEntries = data.recent_entries || [];
+
+            const s = data.summary;
+            const r = data.rates || {};
+            document.getElementById('hero-subtitle').textContent =
+                `Last ${data.period_days} day(s) · ${s.total_audit_events} audit events · ${s.analyze_total} console runs`;
+            document.getElementById('rate-analyze-block').textContent = `${r.analyze_block_rate ?? 0}%`;
+            document.getElementById('rate-filter-block').textContent = `${r.filter_block_rate ?? 0}%`;
+            document.getElementById('rate-pii').textContent = `${r.pii_hit_rate ?? 0}%`;
+
+            if (data.generated_at) {
+                document.getElementById('updated-label').textContent =
+                    `Updated ${fmtTime(data.generated_at)}`;
+            }
+
+            renderKpis(s);
+            renderAnalyzeDonut(s);
+            renderTrafficChart(data.traffic_by_day || []);
+            renderBarChart('pii-chart', dictToBars(data.pii_by_type), {
+                emptyLabel: 'No PII detections. Run analyze with test prompts to populate.',
+                variant: 'warn',
+            });
+            renderBarChart('threat-chart', dictToBars(data.threat_by_category), {
+                emptyLabel: 'No guardrail triggers recorded.',
+                variant: 'danger',
+            });
+            renderBarChart('events-chart', dictToBars(data.event_type_counts, 10), {
+                emptyLabel: 'No audit events yet.',
+            });
+            renderBarChart('provider-chart', dictToBars(data.inference_by_provider), {
+                emptyLabel: 'No console inference runs yet.',
+            });
+            renderBarChart('region-chart', dictToBars(data.region_breakdown), {
+                emptyLabel: 'No region-tagged analyze events.',
+            });
+            renderActors(data.top_actors);
+            populateEventFilter(data.event_type_counts);
+            renderEventsTable(allEntries);
+        }
+
+        async function loadDashboard() {
+            const loading = document.getElementById('logs-loading');
+            const panel = document.getElementById('logs-dashboard');
+            const days = document.getElementById('period-select').value;
+            loading.classList.remove('hidden');
+            panel.classList.add('hidden');
+            try {
+                const res = await fetchWithTimeout(`${API_BASE}/api/v1/logs/dashboard?days=${days}`);
+                if (res.status === 401) { window.location.replace('/auth'); return; }
                 if (res.status === 403) {
                     document.getElementById('access-denied').classList.remove('hidden');
                     setTimeout(() => window.location.replace('/'), 1500);
@@ -70,34 +392,36 @@
                 }
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
-                document.getElementById('viewer-label').textContent = data.viewer ? `Viewer: ${data.viewer}` : '';
-                content.textContent = JSON.stringify(data, null, 2);
+                document.getElementById('viewer-label').textContent = data.viewer ? `Admin: ${data.viewer}` : '';
+                renderDashboard(data);
+                loading.classList.add('hidden');
+                panel.classList.remove('hidden');
             } catch (err) {
-                content.textContent = `Error loading logs: ${err.message}`;
+                loading.innerHTML = `<p class="text-red-400">Error loading dashboard: ${err.message}</p>`;
             }
         }
 
         async function init() {
             try {
                 const res = await fetchWithTimeout(`${API_BASE}/api/v1/auth/me`);
-                if (!res.ok) {
-                    window.location.replace('/auth');
-                    return;
-                }
+                if (!res.ok) { window.location.replace('/auth'); return; }
                 const user = await res.json();
                 if (user.role !== 'admin') {
                     document.getElementById('access-denied').classList.remove('hidden');
                     setTimeout(() => window.location.replace('/'), 1500);
                     return;
                 }
-                document.getElementById('logs-panel').classList.remove('hidden');
-                await loadLogs();
+                await loadDashboard();
             } catch {
                 window.location.replace('/auth');
             }
         }
 
-        document.getElementById('refresh-logs-btn').addEventListener('click', loadLogs);
+        document.getElementById('refresh-logs-btn').addEventListener('click', loadDashboard);
+        document.getElementById('period-select').addEventListener('change', loadDashboard);
+        document.getElementById('event-filter').addEventListener('change', () => {
+            if (dashboardData) renderEventsTable(allEntries);
+        });
         document.getElementById('logout-btn').addEventListener('click', async () => {
             await fetch(`${API_BASE}/api/v1/auth/logout`, { method: 'POST', credentials: 'include' });
             window.location.href = '/auth';
