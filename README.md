@@ -445,9 +445,10 @@ pip install -r requirements.txt
 ### 2. Environment Configuration
 Create `.env` file:
 ```bash
-CEREBRAS_API_KEY=your-cerebras-api-key
-HUGGINGFACE_API_KEY=your-huggingface-api-key
+GEMINI_API_KEY=your-gemini-api-key
+MISTRAL_API_KEY=your-mistral-api-key
 OPENROUTER_API_KEY=your-openrouter-api-key
+HUGGINGFACE_API_KEY=your-huggingface-api-key
 DATABASE_URL=sqlite:///aegis.db
 ```
 

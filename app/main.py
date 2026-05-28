@@ -22,12 +22,14 @@ from datetime import datetime
 
 if __package__:
     from .config import settings
-    from .database import init_db, close_db
+    from .database import init_db, close_db, async_session_maker
+    from .security import ensure_default_admin_user
 else:
     # Support direct execution: `python app/main.py`
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from app.config import settings
-    from app.database import init_db, close_db
+    from app.database import init_db, close_db, async_session_maker
+    from app.security import ensure_default_admin_user
 
 
 @asynccontextmanager
@@ -42,11 +44,13 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
     print("✅ Database initialized")
-    
-    # Initialize engines (lazy loading, but we can pre-warm)
-    from .engines import GuardrailEngine, RiskScorer, PolicyEngine
-    print("✅ Engines loaded")
-    
+
+    # Ensure default admin user from env exists
+    async with async_session_maker() as session:
+        await ensure_default_admin_user(session)
+        await session.commit()
+    print("✅ Admin bootstrap checked")
+
     yield
     
     # Shutdown
@@ -83,9 +87,9 @@ app.add_middleware(
 
 # Import and register routes
 if __package__:
-    from .routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze
+    from .routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze, auth, logs
 else:
-    from app.routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze
+    from app.routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze, auth, logs
 
 app.include_router(filter.router, prefix=settings.api_v1_prefix, tags=["Guardrails"])
 app.include_router(risk.router, prefix=settings.api_v1_prefix, tags=["Risk Scoring"])
@@ -96,6 +100,8 @@ app.include_router(dashboard.router, prefix=settings.api_v1_prefix, tags=["Dashb
 app.include_router(playbook.router, prefix=settings.api_v1_prefix, tags=["Playbooks"])
 app.include_router(proxy.router, prefix=settings.api_v1_prefix, tags=["Proxy"])
 app.include_router(analyze.router, prefix=settings.api_v1_prefix, tags=["Analyze"])
+app.include_router(auth.router, prefix=settings.api_v1_prefix, tags=["Auth"])
+app.include_router(logs.router, prefix=settings.api_v1_prefix, tags=["Logs"])
 
 
 @app.get("/", tags=["Frontend"])
@@ -113,12 +119,28 @@ async def serve_frontend():
     }
 
 
+@app.get("/auth", tags=["Frontend"])
+async def serve_auth_frontend():
+    """Serve separate authentication page."""
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    auth_path = os.path.join(static_dir, "auth.html")
+    return FileResponse(auth_path, media_type="text/html")
+
+
 @app.get("/docs", tags=["Documentation"])
 async def serve_docs():
     """Serve the architecture documentation page."""
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     docs_path = os.path.join(static_dir, "docs.html")
     return FileResponse(docs_path, media_type="text/html")
+
+
+@app.get("/logs", tags=["Frontend"])
+async def serve_logs_frontend():
+    """Serve admin-only telemetry logs page."""
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    logs_path = os.path.join(static_dir, "logs.html")
+    return FileResponse(logs_path, media_type="text/html")
 
 
 @app.get("/deploy_code", tags=["Deployment"])
@@ -161,6 +183,9 @@ async def serve_deploy_code():
         "app/routes/proxy.py",
         "app/routes/analyze.py",
         "app/static/index.html",
+        "app/static/auth.html",
+        "app/static/logs.html",
+        "app/static/app.css",
         "app/static/config.js",
         "app/static/docs.html",
         "app/patterns/pii_patterns.json",
@@ -276,9 +301,15 @@ async def serve_config():
     """Serve frontend config with correct backend URL."""
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     config_path = os.path.join(static_dir, "config.js")
-    if os.path.exists(config_path):
-        return FileResponse(config_path, media_type="application/javascript")
-    return FileResponse(config_path)
+    return FileResponse(config_path, media_type="application/javascript")
+
+
+@app.get("/app.css", tags=["Frontend"])
+async def serve_app_css():
+    """Serve bundled UI styles (no external CDN)."""
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    css_path = os.path.join(static_dir, "app.css")
+    return FileResponse(css_path, media_type="text/css")
 
 
 @app.get("/health", tags=["Health"])
@@ -307,5 +338,5 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.backend_host,
         port=settings.backend_port,
-        reload=settings.debug,
+        reload=False,
     )

@@ -30,12 +30,14 @@ from ..engines.guardrails import get_guardrail_engine
 from ..engines.policy_engine import get_policy_engine
 from ..engines.audit_vault import get_audit_vault
 from ..engines.inference_providers import get_inference_router
+from ..security import require_authenticated_user
 
 router = APIRouter()
 
 @router.post("/proxy", response_model=ProxyResponse)
 async def proxy_to_inference(
     request: ProxyRequest,
+    user=Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -116,7 +118,7 @@ async def proxy_to_inference(
         await audit.log(
             db=db,
             event_type="proxy_blocked",
-            actor="api",
+            actor=user["username"],
             system_name=request.system_name,
             details={
                 "reason": input_filter_result.block_reason,
@@ -174,7 +176,7 @@ async def proxy_to_inference(
     
     # Step 4: Forward to selected inference provider
     inference = get_inference_router()
-    if request.model not in inference.get_models_for_provider(request.inference_provider):
+    if not inference.is_valid_model(request.inference_provider, request.model):
         raise HTTPException(
             status_code=400,
             detail=f"Model '{request.model}' is not valid for provider '{request.inference_provider}'.",
@@ -186,7 +188,7 @@ async def proxy_to_inference(
         await audit.log(
             db=db,
             event_type="proxy_error",
-            actor="api",
+            actor=user["username"],
             system_name=request.system_name,
             details={"error": str(e)},
         )
@@ -256,7 +258,7 @@ async def proxy_to_inference(
     await audit.log(
         db=db,
         event_type="proxy_success",
-        actor="api",
+        actor=user["username"],
         system_name=request.system_name,
         details={
             "input_filters": len(input_filter_result.matches) if hasattr(input_filter_result, 'matches') else 0,
@@ -307,6 +309,7 @@ async def proxy_to_inference(
 @router.post("/proxy/stream")
 async def proxy_stream(
     request: ProxyRequest,
+    user=Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -318,7 +321,7 @@ async def proxy_stream(
     (Simplified implementation - production would use SSE or WebSocket)
     """
     # For now, delegate to non-streaming endpoint
-    return await proxy_to_inference(request, db)
+    return await proxy_to_inference(request, user, db)
 
 
 @router.get("/proxy/status")
@@ -329,8 +332,8 @@ async def proxy_status():
     
     return {
         "providers": options,
-        "default_provider": "cerebras",
-        "default_model": "llama3.1-8b",
+        "default_provider": "gemini",
+        "default_model": "gemini-2.5-flash",
         "tier1_enabled": True,
         "tier2_enabled": settings.tier2_enabled,
         "guardrails_active": True,

@@ -283,7 +283,7 @@ class GuardrailEngine:
     def _init_tier2_provider(self):
         """Initialize tier2 provider/model from configured inference providers."""
         router = get_inference_router()
-        for provider_name in ("cerebras", "openrouter", "huggingface"):
+        for provider_name in ("gemini", "mistral", "openrouter", "huggingface"):
             options = router.get_models_for_provider(provider_name)
             provider_options = router.get_available_provider_options()
             provider_state = next((o for o in provider_options if o["provider"] == provider_name), None)

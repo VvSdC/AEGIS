@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AEGIS - Telemetry Logs</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+    <header class="bg-slate-950/80 border-b border-slate-800 sticky top-0 z-20 backdrop-blur">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold text-sm">A</div>
+                <div>
+                    <h1 class="text-lg font-semibold tracking-tight">AEGIS Logs</h1>
+                    <p class="text-xs text-slate-400">Admin telemetry (audit vault)</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="/" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Console</a>
+                <button id="refresh-logs-btn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md text-xs">Refresh</button>
+                <button id="logout-btn" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        <div id="access-denied" class="hidden section-card p-6">
+            <p class="text-sm text-red-400">Admin access required. Redirecting…</p>
+        </div>
+        <div id="logs-panel" class="section-card p-6 hidden">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-base font-semibold text-slate-100">Telemetry Logs</h2>
+                <span id="viewer-label" class="text-xs text-slate-400"></span>
+            </div>
+            <pre id="logs-content" class="json-view mono max-h-80 overflow-y-auto" style="max-height:70vh">Loading…</pre>
+        </div>
+    </main>
+
+    <script src="config.js"></script>
+    <script>
+        const API_BASE = CONFIG.BACKEND_URL;
+        const FETCH_TIMEOUT_MS = 8000;
+
+        async function fetchWithTimeout(url, options = {}) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+            try {
+                const res = await fetch(url, { ...options, credentials: 'include', signal: controller.signal });
+                clearTimeout(timer);
+                return res;
+            } catch (err) {
+                clearTimeout(timer);
+                throw err;
+            }
+        }
+
+        async function loadLogs() {
+            const content = document.getElementById('logs-content');
+            try {
+                const res = await fetchWithTimeout(`${API_BASE}/api/v1/logs?limit=100`);
+                if (res.status === 401) {
+                    window.location.replace('/auth');
+                    return;
+                }
+                if (res.status === 403) {
+                    document.getElementById('access-denied').classList.remove('hidden');
+                    setTimeout(() => window.location.replace('/'), 1500);
+                    return;
+                }
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                document.getElementById('viewer-label').textContent = data.viewer ? `Viewer: ${data.viewer}` : '';
+                content.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                content.textContent = `Error loading logs: ${err.message}`;
+            }
+        }
+
+        async function init() {
+            try {
+                const res = await fetchWithTimeout(`${API_BASE}/api/v1/auth/me`);
+                if (!res.ok) {
+                    window.location.replace('/auth');
+                    return;
+                }
+                const user = await res.json();
+                if (user.role !== 'admin') {
+                    document.getElementById('access-denied').classList.remove('hidden');
+                    setTimeout(() => window.location.replace('/'), 1500);
+                    return;
+                }
+                document.getElementById('logs-panel').classList.remove('hidden');
+                await loadLogs();
+            } catch {
+                window.location.replace('/auth');
+            }
+        }
+
+        document.getElementById('refresh-logs-btn').addEventListener('click', loadLogs);
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch(`${API_BASE}/api/v1/auth/logout`, { method: 'POST', credentials: 'include' });
+            window.location.href = '/auth';
+        });
+
+        init();
+    </script>
+</body>
+</html>

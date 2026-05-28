@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AEGIS - Sign In</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+    <main class="min-h-screen grid grid-cols-1 lg:grid-cols-2">
+        <section class="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 border-r border-slate-800">
+            <div>
+                <div class="inline-flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center font-bold">A</div>
+                    <div>
+                        <p class="text-lg font-semibold tracking-tight">AEGIS</p>
+                        <p class="text-xs text-slate-400">AI Governance Gateway</p>
+                    </div>
+                </div>
+            </div>
+            <div class="max-w-xl">
+                <h1 class="text-3xl font-semibold leading-tight">Secure, governed AI access for production teams.</h1>
+                <p class="mt-4 text-sm text-slate-300 leading-6">
+                    AEGIS enforces policy guardrails, regional compliance, and audit-grade telemetry before every model call.
+                </p>
+                <div class="mt-8 grid grid-cols-1 gap-3 text-sm">
+                    <div class="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-3">Tier 1 policy filters under strict latency budget</div>
+                    <div class="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-3">Tier 2 deep safety and compliance evaluation</div>
+                    <div class="rounded-lg border border-slate-800 bg-slate-900/70 px-4 py-3">Role-based access and tamper-evident logs</div>
+                </div>
+            </div>
+            <p class="text-xs text-slate-500">AEGIS Production Console</p>
+        </section>
+
+        <section class="flex items-center justify-center p-6 sm:p-10">
+            <div class="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-6 sm:p-8 shadow-2xl shadow-blue-950/30">
+                <div class="mb-6">
+                    <p class="text-sm text-slate-400">Welcome</p>
+                    <h2 class="text-2xl font-semibold mt-1">Authenticate to continue</h2>
+                </div>
+
+                <div class="mb-6 rounded-lg bg-slate-800 p-1 grid grid-cols-2 gap-1">
+                    <button id="mode-signin" class="px-3 py-2 rounded-md text-sm font-medium bg-slate-700">Sign In</button>
+                    <button id="mode-signup" class="px-3 py-2 rounded-md text-sm font-medium text-slate-300">Sign Up</button>
+                </div>
+
+                <div class="space-y-3">
+                    <input id="auth-email" type="email" placeholder="Email address" class="w-full px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-700 text-sm outline-none focus:border-blue-500">
+                    <input id="auth-password" type="password" placeholder="Password" class="w-full px-3 py-2.5 rounded-lg bg-slate-950 border border-slate-700 text-sm outline-none focus:border-blue-500">
+                    <button id="auth-submit" class="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm font-medium">Sign In</button>
+                </div>
+                <p id="password-rules" class="mt-3 text-xs text-slate-500">
+                    Password rules: 8+ chars, uppercase, lowercase, number, and special character.
+                </p>
+
+                <p id="auth-message" class="mt-4 text-xs text-slate-400 min-h-4"></p>
+            </div>
+        </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script>
+        const API_BASE = CONFIG.BACKEND_URL;
+        const messageEl = document.getElementById('auth-message');
+        const submitBtn = document.getElementById('auth-submit');
+        const modeSigninBtn = document.getElementById('mode-signin');
+        const modeSignupBtn = document.getElementById('mode-signup');
+
+        let mode = 'signin';
+
+        function setMode(nextMode) {
+            mode = nextMode;
+            const isSignin = mode === 'signin';
+            modeSigninBtn.className = `px-3 py-2 rounded-md text-sm font-medium ${isSignin ? 'bg-slate-700' : 'text-slate-300'}`;
+            modeSignupBtn.className = `px-3 py-2 rounded-md text-sm font-medium ${!isSignin ? 'bg-slate-700' : 'text-slate-300'}`;
+            submitBtn.textContent = isSignin ? 'Sign In' : 'Create Account';
+            messageEl.textContent = '';
+            document.getElementById('password-rules').style.display = isSignin ? 'none' : 'block';
+        }
+
+        function setMessage(text, isError = false) {
+            messageEl.textContent = text;
+            messageEl.className = `mt-4 text-xs min-h-4 ${isError ? 'text-red-400' : 'text-slate-400'}`;
+        }
+
+        async function authenticate() {
+            const email = document.getElementById('auth-email').value.trim().toLowerCase();
+            const password = document.getElementById('auth-password').value;
+            if (!email || !password) {
+                setMessage('Enter email and password.', true);
+                return;
+            }
+            if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
+                setMessage('Enter a valid email address.', true);
+                return;
+            }
+            if (mode === 'signup') {
+                const hasUpper = /[A-Z]/.test(password);
+                const hasLower = /[a-z]/.test(password);
+                const hasNumber = /\d/.test(password);
+                const hasSpecial = /[^A-Za-z0-9]/.test(password);
+                if (!(password.length >= 8 && hasUpper && hasLower && hasNumber && hasSpecial)) {
+                    setMessage('Password does not meet required rules.', true);
+                    return;
+                }
+            }
+            let timer;
+            try {
+                const path = mode === 'signin' ? '/auth/login' : '/auth/signup';
+                const controller = new AbortController();
+                timer = setTimeout(() => controller.abort(), 4000);
+                const res = await fetch(`${API_BASE}/api/v1${path}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ email, password }),
+                    signal: controller.signal,
+                });
+                clearTimeout(timer);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Authentication failed');
+                window.location.href = '/';
+            } catch (err) {
+                clearTimeout(timer);
+                if (err.name === 'AbortError') {
+                    setMessage('Backend timeout. Check server on port 8001.', true);
+                } else {
+                    setMessage(err.message, true);
+                }
+            }
+        }
+
+        modeSigninBtn.addEventListener('click', () => setMode('signin'));
+        modeSignupBtn.addEventListener('click', () => setMode('signup'));
+        submitBtn.addEventListener('click', authenticate);
+        setMode('signin');
+    </script>
+</body>
+</html>

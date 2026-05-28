@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     app_version: str = Field(default="1.0.0", description="Application version")
     debug: bool = Field(default=True, description="Debug mode")
     secret_key: str = Field(default="dev-secret-key-change-in-prod", description="Secret key for JWT")
+    admin_email: str = Field(default="admin@aegis.local", description="Default admin email")
+    admin_password: str = Field(default="admin123", description="Default admin password")
+    auth_token_expire_minutes: int = Field(default=480, description="JWT expiration in minutes")
 
     # Server
     backend_host: str = Field(default="127.0.0.1", description="Backend host")
@@ -41,9 +44,10 @@ class Settings(BaseSettings):
     )
     
     # Inference providers
-    cerebras_api_key: str = Field(default="", description="Cerebras API key")
+    gemini_api_key: str = Field(default="", description="Google Gemini API key (AI Studio)")
     huggingface_api_key: str = Field(default="", description="Hugging Face Inference API key")
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
+    mistral_api_key: str = Field(default="", description="Mistral API key (La Plateforme Experiment plan)")
     
     # Guardrails
     tier1_max_latency_ms: int = Field(default=30, description="Tier 1 filter max latency in ms")

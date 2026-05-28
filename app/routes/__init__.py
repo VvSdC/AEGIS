@@ -2,7 +2,7 @@
 AEGIS API Routes Package
 """
 
-from . import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze
+from . import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze, auth, logs
 
 __all__ = [
     "filter",
@@ -14,4 +14,6 @@ __all__ = [
     "playbook",
     "proxy",
     "analyze",
+    "auth",
+    "logs",
 ]

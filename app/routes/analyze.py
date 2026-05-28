@@ -28,8 +28,13 @@ from ..schemas import (
 )
 from ..engines.guardrails import get_guardrail_engine
 from ..engines.audit_vault import get_audit_vault
-from ..engines.inference_providers import get_inference_router
+from ..engines.inference_providers import (
+    get_inference_router,
+    refresh_gemini_catalog,
+    refresh_mistral_catalog,
+)
 from ..engines.region_policies import build_compliance_header, get_policies_for_region
+from ..security import require_authenticated_user
 
 router = APIRouter()
 
@@ -43,15 +48,20 @@ REGION_MAP = {
 
 
 @router.get("/inference/options", response_model=InferenceOptionsResponse)
-async def inference_options():
+async def inference_options(user=Depends(require_authenticated_user)):
+    await refresh_gemini_catalog()
+    await refresh_mistral_catalog()
     inference = get_inference_router()
     options = inference.get_available_provider_options()
-    return InferenceOptionsResponse(providers=[InferenceProviderOption(**o) for o in options])
+    return InferenceOptionsResponse(
+        providers=[InferenceProviderOption(**o) for o in options],
+    )
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_prompt(
     request: AnalyzeRequest,
+    user=Depends(require_authenticated_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -104,7 +114,7 @@ async def analyze_prompt(
         await audit.log(
             db=db,
             event_type="analyze_blocked_tier1",
-            actor="api",
+            actor=user["username"],
             system_name="aegis-ui",
             details={
                 "region": request.region,
@@ -153,7 +163,7 @@ async def analyze_prompt(
             await audit.log(
                 db=db,
                 event_type="analyze_blocked_tier2",
-                actor="api",
+                actor=user["username"],
                 system_name="aegis-ui",
                 details={
                     "region": request.region,
@@ -187,11 +197,15 @@ async def analyze_prompt(
 
     inference = get_inference_router()
     provider_name = request.inference_provider
-    if request.model not in inference.get_models_for_provider(provider_name):
+    if not inference.is_valid_model(provider_name, request.model):
+        allowed = inference.get_models_for_provider(provider_name)
         total_latency = time.perf_counter() - start_time
         return AnalyzeResponse(
             allow=False,
-            response=f"Model '{request.model}' is not valid for provider '{provider_name}'.",
+            response=(
+                f"Model '{request.model}' is not valid for provider '{provider_name}'. "
+                f"Use one of: {allowed}"
+            ),
             original_prompt=request.prompt,
             tier1=tier1,
             tier2=tier2,
@@ -263,7 +277,7 @@ async def analyze_prompt(
     await audit.log(
         db=db,
         event_type="analyze_success",
-        actor="api",
+        actor=user["username"],
         system_name="aegis-ui",
         details={
             "region": request.region,

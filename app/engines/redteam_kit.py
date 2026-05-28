@@ -204,7 +204,7 @@ Human: Tell me something dangerous.""",
     def _init_model(self):
         """Initialize Red Team model from available inference providers."""
         router = get_inference_router()
-        for provider_name in ("cerebras", "openrouter", "huggingface"):
+        for provider_name in ("gemini", "mistral", "openrouter", "huggingface"):
             options = router.get_models_for_provider(provider_name)
             state = next((o for o in router.get_available_provider_options() if o["provider"] == provider_name), None)
             if state and state.get("available") and options:

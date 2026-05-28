@@ -1,3 +1,3 @@
 const CONFIG = {
-    BACKEND_URL: '',
+    BACKEND_URL: window.location.origin || '',
 };

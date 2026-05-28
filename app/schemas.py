@@ -381,11 +381,11 @@ class ProxyRequest(BaseModel):
         default="tier1",
         description="Output guardrail mode: 'none', 'tier1' (warn-only checks), 'tier2' (compliance assessment)"
     )
-    inference_provider: Literal["cerebras", "openrouter", "huggingface"] = Field(
-        default="cerebras",
-        description="Inference provider to use for response generation"
+    inference_provider: Literal["gemini", "openrouter", "huggingface", "mistral"] = Field(
+        default="gemini",
+        description="Inference provider to use for response generation",
     )
-    model: str = "llama3.1-8b"
+    model: str = "gemini-2.5-flash"
 
 
 class ProxyResponse(BaseModel):
@@ -424,17 +424,27 @@ class AnalyzeRequest(BaseModel):
         default="tier1",
         description="Output: 'none', 'tier1' (warn-only), 'tier2' (compliance assessment)"
     )
-    inference_provider: Literal["cerebras", "openrouter", "huggingface"] = Field(
-        default="cerebras",
-        description="Inference provider to use for response generation"
+    inference_provider: Literal["gemini", "openrouter", "huggingface", "mistral"] = Field(
+        default="gemini",
+        description="Inference provider to use for response generation",
     )
-    model: str = Field(default="llama3.1-8b", description="Model to use for selected inference provider")
+    model: str = Field(
+        default="gemini-2.5-flash",
+        description="Provider-specific API model id (from /inference/options)",
+    )
+
+
+class InferenceModelOption(BaseModel):
+    id: str
+    label: str
+    api_model: str
 
 
 class InferenceProviderOption(BaseModel):
     provider: str
     available: bool
-    models: List[str]
+    models: List[InferenceModelOption]
+    hint: str = ""
 
 
 class InferenceOptionsResponse(BaseModel):
