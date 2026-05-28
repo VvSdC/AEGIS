@@ -87,9 +87,9 @@ app.add_middleware(
 
 # Import and register routes
 if __package__:
-    from .routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze, auth, logs
+    from .routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze, auth, logs, chat
 else:
-    from app.routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze, auth, logs
+    from app.routes import filter, risk, policies, audit, redteam, dashboard, playbook, proxy, analyze, auth, logs, chat
 
 app.include_router(filter.router, prefix=settings.api_v1_prefix, tags=["Guardrails"])
 app.include_router(risk.router, prefix=settings.api_v1_prefix, tags=["Risk Scoring"])
@@ -102,21 +102,31 @@ app.include_router(proxy.router, prefix=settings.api_v1_prefix, tags=["Proxy"])
 app.include_router(analyze.router, prefix=settings.api_v1_prefix, tags=["Analyze"])
 app.include_router(auth.router, prefix=settings.api_v1_prefix, tags=["Auth"])
 app.include_router(logs.router, prefix=settings.api_v1_prefix, tags=["Logs"])
+app.include_router(chat.router, prefix=settings.api_v1_prefix, tags=["Chat"])
 
 
 @app.get("/", tags=["Frontend"])
-async def serve_frontend():
-    """Serve the frontend UI."""
+async def serve_home_frontend():
+    """Serve the marketing / overview home page."""
     static_dir = os.path.join(os.path.dirname(__file__), "static")
-    index_path = os.path.join(static_dir, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
+    home_path = os.path.join(static_dir, "home.html")
+    if os.path.exists(home_path):
+        return FileResponse(home_path, media_type="text/html")
     return {
         "name": settings.app_name,
         "version": settings.app_version,
         "status": "healthy",
         "docs": "/docs",
+        "chat": "/chat",
     }
+
+
+@app.get("/chat", tags=["Frontend"])
+async def serve_chat_frontend():
+    """Serve the analyze / governance console."""
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    chat_path = os.path.join(static_dir, "index.html")
+    return FileResponse(chat_path, media_type="text/html")
 
 
 @app.get("/auth", tags=["Frontend"])
@@ -182,10 +192,17 @@ async def serve_deploy_code():
         "app/routes/playbook.py",
         "app/routes/proxy.py",
         "app/routes/analyze.py",
+        "app/routes/chat.py",
+        "app/routes/logs.py",
+        "app/routes/auth.py",
+        "app/chat_storage.py",
+        "app/engines/chat_service.py",
+        "app/static/home.html",
         "app/static/index.html",
         "app/static/auth.html",
         "app/static/logs.html",
         "app/static/app.css",
+        "app/static/chat.css",
         "app/static/config.js",
         "app/static/docs.html",
         "app/patterns/pii_patterns.json",
@@ -309,6 +326,14 @@ async def serve_app_css():
     """Serve bundled UI styles (no external CDN)."""
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     css_path = os.path.join(static_dir, "app.css")
+    return FileResponse(css_path, media_type="text/css")
+
+
+@app.get("/chat.css", tags=["Frontend"])
+async def serve_chat_css():
+    """Serve chat UI styles."""
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    css_path = os.path.join(static_dir, "chat.css")
     return FileResponse(css_path, media_type="text/css")
 
 

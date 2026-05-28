@@ -136,6 +136,53 @@ class RedTeamResult(Base):
         return f"<RedTeamResult(category='{self.category}', passed={self.passed})>"
 
 
+class ChatSession(Base):
+    """Governed chat session for multi-turn conversations."""
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(100), index=True)
+    title: Mapped[str] = mapped_column(String(200), default="New chat")
+    region: Mapped[str] = mapped_column(String(20), default="india")
+    guardrail_mode: Mapped[str] = mapped_column(String(20), default="basic")
+    output_guardrail_mode: Mapped[str] = mapped_column(String(20), default="tier1")
+    inference_provider: Mapped[str] = mapped_column(String(30), default="gemini")
+    model: Mapped[str] = mapped_column(String(100), default="gemini-2.0-flash")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    messages: Mapped[list["ChatMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<ChatSession(id={self.id}, user='{self.user_id}')>"
+
+
+class ChatMessage(Base):
+    """Single message in a chat session with optional redacted/withheld content."""
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("chat_sessions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(20))  # user, assistant
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    storage_mode: Mapped[str] = mapped_column(
+        String(20), default="full"
+    )  # full, redacted, withheld
+    allow: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    pipeline: Mapped[dict] = mapped_column(JSON, default=dict)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    session: Mapped["ChatSession"] = relationship(back_populates="messages")
+
+    def __repr__(self) -> str:
+        return f"<ChatMessage(id={self.id}, role='{self.role}', storage='{self.storage_mode}')>"
+
+
 class DPIAReport(Base):
     """Data Protection Impact Assessment report model."""
     __tablename__ = "dpia_reports"

@@ -342,6 +342,8 @@ class LogsDashboardSummary(BaseModel):
     jailbreak_detections: int
     injection_detections: int
     toxicity_detections: int
+    chat_sessions: int = 0
+    chat_messages: int = 0
 
 
 class LogsTrafficDay(BaseModel):
@@ -580,3 +582,70 @@ class AnalyzeResponse(BaseModel):
     tier2: Optional[Tier2Result] = None
     output_guardrail: Optional[OutputGuardrailResult] = None
     total_latency_seconds: float
+
+
+# =============================================================================
+# Chat Schemas
+# =============================================================================
+
+class ChatSessionSettings(BaseModel):
+    region: Literal["india", "china", "europe", "usa", "australia"] = "india"
+    guardrail_mode: Literal["basic", "advanced"] = "basic"
+    output_guardrail_mode: Literal["none", "tier1", "tier2"] = "tier1"
+    inference_provider: Literal["gemini", "openrouter", "huggingface", "mistral"] = "gemini"
+    model: str = "gemini-2.0-flash"
+
+
+class ChatSessionCreate(ChatSessionSettings):
+    title: Optional[str] = "New chat"
+
+
+class ChatSessionUpdate(ChatSessionSettings):
+    title: Optional[str] = None
+
+
+class ChatSessionResponse(BaseModel):
+    id: int
+    title: str
+    region: str
+    guardrail_mode: str
+    output_guardrail_mode: str
+    inference_provider: str
+    model: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+
+class PipelineStepState(BaseModel):
+    id: str
+    label: str
+    state: Literal["waiting", "active", "done", "blocked", "skipped"]
+    detail: Optional[str] = None
+    latency_ms: Optional[float] = None
+
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    role: Literal["user", "assistant"]
+    content: Optional[str] = None
+    storage_mode: Literal["full", "redacted", "withheld"] = "full"
+    allow: Optional[bool] = None
+    pipeline: List[PipelineStepState] = []
+    identified_entities: List[str] = []
+    output_guardrail: Optional[OutputGuardrailResult] = None
+    created_at: datetime
+    ephemeral_display: Optional[str] = Field(
+        default=None,
+        description="One-time UI text for withheld user messages (not stored server-side)",
+    )
+
+
+class ChatSendMessageRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=100000)
+
+
+class ChatSendMessageResponse(BaseModel):
+    user_message: ChatMessageResponse
+    assistant_message: ChatMessageResponse
+    session_id: int

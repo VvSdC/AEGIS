@@ -27,7 +27,8 @@
                 </label>
                 <span id="viewer-label" class="text-xs text-slate-500 hidden sm:inline"></span>
                 <span id="updated-label" class="text-xs text-slate-600 hidden md:inline"></span>
-                <a href="/" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Console</a>
+                <a href="/" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Home</a>
+                <a href="/chat" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Chat</a>
                 <button id="refresh-logs-btn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-md text-xs text-white">Refresh</button>
                 <button id="logout-btn" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Logout</button>
             </div>
@@ -227,6 +228,10 @@
                     { label: 'Analyze runs', value: summary.analyze_total, accent: 'accent-emerald' },
                     { label: 'Allowed', value: summary.analyze_allowed, accent: 'accent-emerald' },
                     { label: 'Blocked', value: summary.analyze_blocked, accent: 'accent-red' },
+                ]},
+                { title: 'Chat', cards: [
+                    { label: 'Sessions', value: summary.chat_sessions ?? 0, accent: 'accent-blue' },
+                    { label: 'Messages', value: summary.chat_messages ?? 0, accent: 'accent-emerald' },
                 ]},
             ];
             document.getElementById('kpi-grid').innerHTML = groups.flatMap(g =>

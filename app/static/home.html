@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AEGIS — AI Governance Platform</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 home-page">
+    <header class="app-shell-header sticky top-0 z-20 backdrop-blur">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between flex-wrap gap-3">
+            <a href="/" class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold text-sm">A</div>
+                <div>
+                    <h1 class="text-lg font-semibold tracking-tight">AEGIS</h1>
+                    <p class="text-xs text-slate-400">AI Governance Control Plane</p>
+                </div>
+            </a>
+            <nav class="hidden sm:flex items-center gap-6">
+                <a href="#offerings" class="home-nav-link">What we offer</a>
+                <a href="/docs" class="home-nav-link">Documentation</a>
+            </nav>
+            <div class="flex items-center gap-3">
+                <span id="auth-indicator" class="glass-pill text-xs text-slate-300 hidden">Guest</span>
+                <a id="logs-nav-link" href="/logs" class="hidden px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Logs</a>
+                <a id="signin-link" href="/auth" class="btn-secondary text-xs py-1.5 px-3 hidden">Sign In</a>
+                <a id="chat-link" href="/chat" class="btn-primary text-xs py-1.5 px-3 hidden">Open Chat</a>
+                <button id="logout-btn" class="hidden px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md text-xs">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <section class="home-hero">
+        <div class="home-hero-orbs" aria-hidden="true">
+            <div class="home-orb home-orb-1"></div>
+            <div class="home-orb home-orb-2"></div>
+            <div class="home-orb home-orb-3"></div>
+        </div>
+        <div class="home-hero-inner">
+            <p class="text-xs font-medium uppercase tracking-widest text-blue-400 mb-3">AI Ethics &amp; Governance Intelligence System</p>
+            <h2 class="home-gradient-title">Govern every model call before it reaches production</h2>
+            <p class="home-hero-lead">
+                AEGIS is your policy enforcement layer for LLMs — real-time guardrails, regional compliance,
+                and tamper-evident audits in one control plane.
+            </p>
+            <div class="home-hero-cta">
+                <a id="hero-chat-btn" href="/auth" class="btn-primary">Get started</a>
+                <a href="/docs" class="btn-secondary">Documentation &amp; FAQ</a>
+            </div>
+            <div class="home-stats">
+                <div class="home-stat"><div class="num">&lt;30ms</div><div class="lbl">Tier 1 scan</div></div>
+                <div class="home-stat"><div class="num">5</div><div class="lbl">Regions supported</div></div>
+                <div class="home-stat"><div class="num">4+</div><div class="lbl">Model providers</div></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="home-section" id="offerings">
+        <h2 class="home-section-title">What we offer</h2>
+        <p class="home-section-sub">Everything you need to ship governed AI — without bolting on security as an afterthought.</p>
+        <div class="home-features">
+            <article class="home-feature-card" data-delay="0">
+                <div class="home-feature-icon">⚡</div>
+                <h3>Real-time input guardrails</h3>
+                <p>Block or redact PII, jailbreaks, injections, and toxic content before prompts reach any model.</p>
+            </article>
+            <article class="home-feature-card" data-delay="80">
+                <div class="home-feature-icon">🛡️</div>
+                <h3>Deep policy analysis</h3>
+                <p>Optional Tier 2 evaluation with region-specific rules for EU, India, US, China, and Australia.</p>
+            </article>
+            <article class="home-feature-card" data-delay="160">
+                <div class="home-feature-icon">📤</div>
+                <h3>Output safety checks</h3>
+                <p>Assess model responses for compliance gaps, warnings, and whether output is safe to use.</p>
+            </article>
+            <article class="home-feature-card" data-delay="240">
+                <div class="home-feature-icon">🤖</div>
+                <h3>Governed inference</h3>
+                <p>Route to Gemini, Mistral, OpenRouter, or Hugging Face through a single audited gateway.</p>
+            </article>
+            <article class="home-feature-card" data-delay="320">
+                <div class="home-feature-icon">🔗</div>
+                <h3>Immutable audit vault</h3>
+                <p>Hash-chained logs for every allow, deny, and filter decision — ready for compliance reviews.</p>
+            </article>
+            <article class="home-feature-card" data-delay="400">
+                <div class="home-feature-icon">📊</div>
+                <h3>Operator telemetry</h3>
+                <p>Admin dashboards for traffic, PII categories, block rates, and audit event history.</p>
+            </article>
+        </div>
+    </section>
+
+    <section class="home-section">
+        <div class="section-card text-center home-cta-band">
+            <h2 class="text-lg font-semibold text-slate-100 mb-2">Ready to try it?</h2>
+            <p class="text-sm text-slate-400 mb-5 max-w-lg mx-auto">
+                Use the Chat console to run governed prompts live. For architecture, API reference, and FAQs, see the documentation.
+            </p>
+            <div class="home-cta-actions">
+                <a id="bottom-chat-btn" href="/auth" class="btn-primary">Open Chat console</a>
+                <a href="/docs" class="btn-secondary">View documentation</a>
+            </div>
+        </div>
+    </section>
+
+    <footer class="home-footer">
+        <p>AEGIS — AI Ethics &amp; Governance Intelligence System</p>
+        <p class="mt-2">
+            <a href="/chat" class="text-blue-400">Chat</a> ·
+            <a href="/docs" class="text-blue-400">Docs</a> ·
+            <a href="/auth" id="footer-signin" class="text-blue-400">Sign in</a>
+            <button type="button" id="footer-logout" class="home-footer-link hidden">Sign out</button>
+        </p>
+    </footer>
+
+    <script src="config.js"></script>
+    <script>
+        const API_BASE = CONFIG.BACKEND_URL;
+
+        function setAuthUI(user) {
+            const signin = document.getElementById('signin-link');
+            const chat = document.getElementById('chat-link');
+            const heroChat = document.getElementById('hero-chat-btn');
+            const bottomChat = document.getElementById('bottom-chat-btn');
+            const logout = document.getElementById('logout-btn');
+            const indicator = document.getElementById('auth-indicator');
+            const logsLink = document.getElementById('logs-nav-link');
+            const footerSignin = document.getElementById('footer-signin');
+            const footerLogout = document.getElementById('footer-logout');
+
+            if (user) {
+                signin.classList.add('hidden');
+                chat.classList.remove('hidden');
+                logout.classList.remove('hidden');
+                indicator.classList.remove('hidden');
+                indicator.textContent = user.email || user.username || 'Signed in';
+                heroChat.href = '/chat';
+                heroChat.textContent = 'Open Chat console';
+                bottomChat.href = '/chat';
+                footerSignin.classList.add('hidden');
+                footerLogout.classList.remove('hidden');
+                if (user.role === 'admin') logsLink.classList.remove('hidden');
+            } else {
+                signin.classList.remove('hidden');
+                chat.classList.add('hidden');
+                logout.classList.add('hidden');
+                indicator.classList.add('hidden');
+                heroChat.href = '/auth';
+                heroChat.textContent = 'Get started';
+                bottomChat.href = '/auth';
+                footerSignin.classList.remove('hidden');
+                footerLogout.classList.add('hidden');
+                logsLink.classList.add('hidden');
+            }
+        }
+
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const el = entry.target;
+                    const delay = el.dataset.delay || 0;
+                    setTimeout(() => el.classList.add('is-visible'), Number(delay));
+                    observer.unobserve(el);
+                }
+            });
+        }, { threshold: 0.15 });
+        document.querySelectorAll('.home-feature-card').forEach(card => observer.observe(card));
+
+        async function handleLogout() {
+            await fetch(`${API_BASE}/api/v1/auth/logout`, { method: 'POST', credentials: 'include' });
+            setAuthUI(null);
+            window.location.href = '/auth';
+        }
+        document.getElementById('logout-btn').addEventListener('click', handleLogout);
+        document.getElementById('footer-logout').addEventListener('click', handleLogout);
+
+        (async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/v1/auth/me`, { credentials: 'include' });
+                if (res.ok) setAuthUI(await res.json());
+                else setAuthUI(null);
+            } catch {
+                setAuthUI(null);
+            }
+        })();
+    </script>
+</body>
+</html>

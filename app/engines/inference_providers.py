@@ -228,6 +228,24 @@ class BaseInferenceProvider:
     async def generate_content_async(self, prompt: str, model: str) -> str:
         raise NotImplementedError
 
+    async def generate_messages_async(
+        self,
+        messages: List[Dict[str, str]],
+        model: str,
+        compliance_header: str = "",
+    ) -> str:
+        if not messages:
+            return await self.generate_content_async(compliance_header, model)
+        parts = []
+        if compliance_header:
+            parts.append(f"System: {compliance_header.strip()}")
+        for msg in messages:
+            role = msg.get("role", "user")
+            label = "Assistant" if role == "assistant" else "User"
+            parts.append(f"{label}: {msg.get('content', '')}")
+        combined = "\n\n".join(parts) + "\n\nAssistant:"
+        return await self.generate_content_async(combined, model)
+
 
 class GeminiInferenceProvider(BaseInferenceProvider):
     provider_name = "gemini"
@@ -237,6 +255,44 @@ class GeminiInferenceProvider(BaseInferenceProvider):
 
     def is_available(self) -> bool:
         return bool(settings.gemini_api_key)
+
+    async def generate_messages_async(
+        self,
+        messages: List[Dict[str, str]],
+        model: str,
+        compliance_header: str = "",
+    ) -> str:
+        if not settings.gemini_api_key:
+            raise RuntimeError("GEMINI_API_KEY is not configured.")
+        api_model = resolve_api_model(self.provider_name, model)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{api_model}:generateContent"
+        contents = []
+        if compliance_header.strip():
+            contents.append({"role": "user", "parts": [{"text": compliance_header.strip()}]})
+            contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these governance rules."}]})
+        for msg in messages:
+            role = "model" if msg.get("role") == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
+        payload = {"contents": contents}
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                url,
+                params={"key": settings.gemini_api_key},
+                json=payload,
+            )
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"Gemini API error {resp.status_code} for model '{api_model}': {resp.text[:300]}"
+                )
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                raise RuntimeError(f"Gemini API returned no candidates: {str(data)[:200]}")
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+            if not text.strip():
+                raise RuntimeError("Gemini API returned empty content.")
+            return text.strip()
 
     async def generate_content_async(self, prompt: str, model: str) -> str:
         if not settings.gemini_api_key:
@@ -444,6 +500,29 @@ class InferenceRouter:
         if not provider.is_available():
             raise RuntimeError(f"Inference provider '{provider_name}' is not configured (missing API key).")
         return await provider.generate_content_async(prompt, model)
+
+    async def generate_messages(
+        self,
+        provider_name: str,
+        model: str,
+        messages: List[Dict[str, str]],
+        compliance_header: str = "",
+    ) -> str:
+        if provider_name == "gemini":
+            await refresh_gemini_catalog()
+        if provider_name == "mistral":
+            await refresh_mistral_catalog()
+        provider = self._providers.get(provider_name)
+        if not provider:
+            raise RuntimeError(f"Unsupported inference provider: {provider_name}")
+        if not self.is_valid_model(provider_name, model):
+            allowed = self.get_models_for_provider(provider_name)
+            raise RuntimeError(
+                f"Model '{model}' is not valid for '{provider_name}'. Allowed: {allowed}"
+            )
+        if not provider.is_available():
+            raise RuntimeError(f"Inference provider '{provider_name}' is not configured (missing API key).")
+        return await provider.generate_messages_async(messages, model, compliance_header)
 
 
 _inference_router: Optional[InferenceRouter] = None

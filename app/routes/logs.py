@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import AuditLog, FilterLog
+from ..models import AuditLog, ChatMessage, ChatSession, FilterLog
 from ..schemas import (
     LogsActorCount,
     LogsDashboardRates,
@@ -170,6 +170,17 @@ async def get_logs_dashboard(
 
     recent_entries = [_audit_entry(row) for row in audit_rows[:50]]
 
+    chat_sessions_count = (
+        await db.execute(
+            select(func.count(ChatSession.id)).where(ChatSession.created_at >= cutoff)
+        )
+    ).scalar_one() or 0
+    chat_messages_count = (
+        await db.execute(
+            select(func.count(ChatMessage.id)).where(ChatMessage.created_at >= cutoff)
+        )
+    ).scalar_one() or 0
+
     filter_total = len(filter_rows)
     analyze_block_rate = round((analyze_blocked / analyze_total) * 100, 1) if analyze_total else 0.0
     filter_block_rate = round((blocked_filter_requests / filter_total) * 100, 1) if filter_total else 0.0
@@ -203,6 +214,8 @@ async def get_logs_dashboard(
             jailbreak_detections=jailbreak_detections,
             injection_detections=injection_detections,
             toxicity_detections=toxicity_detections,
+            chat_sessions=chat_sessions_count,
+            chat_messages=chat_messages_count,
         ),
         event_type_counts=dict(sorted(event_type_counts.items(), key=lambda x: -x[1])),
         pii_by_type=dict(sorted(pii_by_type.items(), key=lambda x: -x[1])),
