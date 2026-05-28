@@ -4,7 +4,7 @@ Governed multi-turn chat API.
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,6 +117,20 @@ async def update_session(
     if body.title is not None:
         session.title = body.title
     return await _session_response(db, session)
+
+
+@router.delete("/chat/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: int,
+    user=Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await get_session_for_user(db, session_id, user["username"])
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await db.delete(session)
+    return Response(status_code=204)
 
 
 @router.get("/chat/sessions/{session_id}/messages", response_model=List[ChatMessageResponse])

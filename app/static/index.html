@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="/chat.css">
 </head>
-<body class="bg-slate-950 text-slate-100">
+<body class="bg-slate-950 text-slate-100 chat-app-loading">
     <div class="chat-layout">
         <aside class="chat-sidebar" id="chat-sidebar">
             <div class="chat-sidebar-header">
@@ -17,6 +17,10 @@
         </aside>
 
         <div class="chat-main">
+            <div id="chat-loading" class="chat-loading" role="status" aria-live="polite">
+                <div class="chat-loading-spinner" aria-hidden="true"></div>
+                <p class="chat-loading-text">Loading your conversations…</p>
+            </div>
             <header class="chat-topbar app-shell-header">
                 <div class="flex items-center gap-3">
                     <button type="button" id="sidebar-toggle" class="chat-icon-btn md:hidden" aria-label="Open conversations">☰</button>
@@ -143,10 +147,27 @@
         </div>
     </div>
 
+    <div class="chat-modal-backdrop" id="delete-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+        <div class="chat-modal chat-modal-sm" id="delete-modal">
+            <div class="chat-modal-header">
+                <div>
+                    <h2 id="delete-modal-title">Delete conversation?</h2>
+                    <p id="delete-modal-desc">This chat and all its messages will be permanently removed. This cannot be undone.</p>
+                </div>
+                <button type="button" class="chat-modal-close" id="close-delete-btn" aria-label="Close">×</button>
+            </div>
+            <div class="chat-modal-footer">
+                <button type="button" id="cancel-delete-btn" class="btn-secondary text-sm">Cancel</button>
+                <button type="button" id="confirm-delete-btn" class="btn-danger text-sm">Delete</button>
+            </div>
+        </div>
+    </div>
+
     <script src="config.js"></script>
     <script>
         const API = CONFIG.BACKEND_URL;
         let currentSessionId = null;
+        let pendingDeleteId = null;
         let inferenceOptions = [];
         let sending = false;
 
@@ -158,10 +179,13 @@
             sendBtn: document.getElementById('send-btn'),
             composerForm: document.getElementById('composer-form'),
             settingsBackdrop: document.getElementById('settings-backdrop'),
+            deleteBackdrop: document.getElementById('delete-backdrop'),
             providerSelect: document.getElementById('settings-provider'),
             modelSelect: document.getElementById('settings-model'),
             composerMeta: document.getElementById('composer-meta'),
             composerModel: document.getElementById('composer-model'),
+            chatLoading: document.getElementById('chat-loading'),
+            composerWrap: document.querySelector('.chat-composer-wrap'),
         };
 
         const INPUT_MIN_PX = 88;
@@ -183,6 +207,10 @@
                 window.location.replace('/auth');
                 throw new Error('Unauthorized');
             }
+            if (res.status === 204) {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return null;
+            }
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
             return data;
@@ -194,11 +222,60 @@
             return d.innerHTML;
         }
 
-        function formatInlineText(text) {
+        function formatInlineSegment(text) {
             let html = escapeHtml(text);
             html = html.replace(/`([^`\n]+)`/g, '<code class="chat-inline-code">$1</code>');
-            const paras = html.split(/\n\n+/);
-            return paras.map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+            html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+            return html;
+        }
+
+        function formatInlineText(text) {
+            const paragraphs = text.split(/\n\n+/);
+            return paragraphs.map((para) => {
+                const lines = para.split('\n');
+                const chunks = [];
+                let olItems = [];
+                let ulItems = [];
+
+                const flushOl = () => {
+                    if (!olItems.length) return;
+                    chunks.push(`<ol>${olItems.map((li) => `<li>${li}</li>`).join('')}</ol>`);
+                    olItems = [];
+                };
+                const flushUl = () => {
+                    if (!ulItems.length) return;
+                    chunks.push(`<ul>${ulItems.map((li) => `<li>${li}</li>`).join('')}</ul>`);
+                    ulItems = [];
+                };
+
+                for (const rawLine of lines) {
+                    const trimmed = rawLine.trim();
+                    if (!trimmed) continue;
+                    const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+                    const ulMatch = trimmed.match(/^\*\s+(.*)$/);
+                    if (olMatch) {
+                        flushUl();
+                        olItems.push(formatInlineSegment(olMatch[1]));
+                    } else if (ulMatch) {
+                        flushOl();
+                        ulItems.push(formatInlineSegment(ulMatch[1]));
+                    } else {
+                        flushOl();
+                        flushUl();
+                        chunks.push(formatInlineSegment(trimmed));
+                    }
+                }
+                flushOl();
+                flushUl();
+
+                if (!chunks.length) return '';
+                if (chunks.length === 1 && !chunks[0].startsWith('<ol>') && !chunks[0].startsWith('<ul>')) {
+                    return `<p>${chunks[0]}</p>`;
+                }
+                return chunks.join('');
+            }).join('');
         }
 
         function formatMessageContent(raw) {
@@ -267,10 +344,11 @@
                 text = msg.content || '[Redacted for storage]';
             }
             const withheld = msg.storage_mode === 'withheld' ? ' withheld' : '';
-            const body = msg.storage_mode === 'withheld' || !text.includes('```')
-                ? escapeHtml(text)
-                : formatMessageContent(text);
-            const wrap = msg.storage_mode === 'withheld' || !text.includes('```')
+            const needsRichText = msg.storage_mode !== 'withheld' && (
+                text.includes('```') || text.includes('**') || /^\s*\d+\.\s/m.test(text) || /^\s*\*\s/m.test(text)
+            );
+            const body = needsRichText ? formatMessageContent(text) : escapeHtml(text);
+            const wrap = !needsRichText
                 ? `<div class="chat-bubble user${withheld}">${body}</div>`
                 : `<div class="chat-bubble user"><div class="chat-bubble-text">${body}</div></div>`;
             return `<div class="chat-row user">${wrap}</div>`;
@@ -301,24 +379,23 @@
                 : (og.action_required || findings.some((f) => f.severity === 'critical') ? 'danger' : 'warn');
             const icon = isSafe ? '✓' : (level === 'danger' ? '✕' : '⚠');
 
-            let headline = isSafe ? 'Output is safe to use' : 'Output review';
-            if (!isSafe && summary) {
-                headline = summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
-            } else if (!isSafe && findings.length) {
-                headline = `${findings.length} issue${findings.length === 1 ? '' : 's'} identified`;
-            }
+            const headline = isSafe
+                ? 'Output is safe to use'
+                : 'Vulnerabilities / Issues found in model identified';
 
             let body = '';
             if (!isSafe) {
-                const extraSummary = summary && !headline.startsWith(summary.slice(0, 40))
-                    ? `<p>${escapeHtml(summary)}</p>` : '';
-                const t1 = tier1Summary && tier1Summary !== summary
-                    ? `<p>${escapeHtml(tier1Summary)}</p>` : '';
-                const t2 = tier2Assessment && tier2Assessment !== summary
-                    ? `<p>${escapeHtml(tier2Assessment)}</p>` : '';
-                body = extraSummary + t1 + t2;
+                if (summary) {
+                    body += `<div class="review-section-label">Summary</div><p>${escapeHtml(summary)}</p>`;
+                }
+                if (tier1Summary && tier1Summary !== summary) {
+                    body += `<p>${escapeHtml(tier1Summary)}</p>`;
+                }
+                if (tier2Assessment && tier2Assessment !== summary) {
+                    body += `<p>${escapeHtml(tier2Assessment)}</p>`;
+                }
                 if (findings.length) {
-                    body += `<div class="review-section-label">Identified issues</div><ul>${findings.map((f) =>
+                    body += `<div class="review-section-label">Issues</div><ul>${findings.map((f) =>
                         `<li>${escapeHtml(f.text)}</li>`).join('')}</ul>`;
                 }
                 if (recs.length) {
@@ -383,34 +460,120 @@
             els.composerMeta.title = providerLabel ? `${providerLabel} · ${modelLabel}` : modelLabel;
         }
 
+        function setAppLoading(loading, message) {
+            document.body.classList.toggle('chat-app-loading', loading);
+            els.chatLoading.classList.toggle('hidden', !loading);
+            if (message) {
+                els.chatLoading.querySelector('.chat-loading-text').textContent = message;
+            }
+            els.messageInput.disabled = loading;
+            els.sendBtn.disabled = loading || !els.messageInput.value.trim();
+            document.getElementById('new-chat-btn').disabled = loading;
+        }
+
+        function renderSessionList(sessions) {
+            if (!sessions.length) {
+                els.sessionList.innerHTML = '<p class="chat-sidebar-empty">No chats yet</p>';
+                return;
+            }
+            els.sessionList.innerHTML = sessions.map((s) => `
+                <div class="chat-session-row${s.id === currentSessionId ? ' active' : ''}">
+                    <button type="button" class="chat-session-item" data-id="${s.id}">
+                        ${escapeHtml(s.title)}
+                    </button>
+                    <button type="button" class="chat-session-delete" data-id="${s.id}" title="Delete chat" aria-label="Delete chat">×</button>
+                </div>`).join('');
+        }
+
         async function loadSessions() {
             const sessions = await api('/chat/sessions');
-            els.sessionList.innerHTML = sessions.map((s) => `
-                <button type="button" class="chat-session-item${s.id === currentSessionId ? ' active' : ''}" data-id="${s.id}">
-                    ${escapeHtml(s.title)}
-                </button>`).join('');
-            els.sessionList.querySelectorAll('.chat-session-item').forEach((btn) => {
-                btn.addEventListener('click', () => selectSession(Number(btn.dataset.id)));
-            });
+            renderSessionList(sessions);
+            return sessions;
         }
 
-        async function selectSession(id) {
-            currentSessionId = id;
-            await loadSessions();
-            const messages = await api(`/chat/sessions/${id}/messages`);
-            renderMessages(messages);
-            const session = await api(`/chat/sessions/${id}`);
-            applySettingsToForm(session);
+        function openDeleteModal(id) {
+            pendingDeleteId = id;
+            const row = els.sessionList.querySelector(`.chat-session-delete[data-id="${id}"]`)
+                ?.closest('.chat-session-row');
+            const title = row?.querySelector('.chat-session-item')?.textContent?.trim();
+            const desc = document.getElementById('delete-modal-desc');
+            if (title) {
+                desc.innerHTML = `Delete <strong>${escapeHtml(title)}</strong> and all its messages? This cannot be undone.`;
+            } else {
+                desc.textContent = 'This chat and all its messages will be permanently removed. This cannot be undone.';
+            }
+            els.deleteBackdrop.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            document.getElementById('confirm-delete-btn').focus();
         }
 
-        async function createSession() {
+        function closeDeleteModal() {
+            pendingDeleteId = null;
+            els.deleteBackdrop.classList.remove('open');
+            if (!els.settingsBackdrop.classList.contains('open')) {
+                document.body.style.overflow = '';
+            }
+        }
+
+        async function confirmDeleteSession() {
+            const id = pendingDeleteId;
+            closeDeleteModal();
+            if (!id) return;
+            setAppLoading(true, 'Deleting conversation…');
+            try {
+                await api(`/chat/sessions/${id}`, { method: 'DELETE' });
+                const sessions = await loadSessions();
+                if (currentSessionId === id) {
+                    currentSessionId = null;
+                    if (sessions.length) await selectSession(sessions[0].id, { skipListReload: true });
+                    else await createSession({ skipListReload: true });
+                }
+            } finally {
+                setAppLoading(false);
+            }
+        }
+
+        function promptDeleteSession(id) {
+            openDeleteModal(id);
+        }
+
+        els.sessionList.addEventListener('click', (e) => {
+            const del = e.target.closest('.chat-session-delete');
+            if (del) {
+                e.preventDefault();
+                e.stopPropagation();
+                promptDeleteSession(Number(del.dataset.id));
+                return;
+            }
+            const item = e.target.closest('.chat-session-item');
+            if (item) selectSession(Number(item.dataset.id));
+        });
+
+        async function selectSession(id, { skipListReload = false, silent = false } = {}) {
+            if (!silent) setAppLoading(true, 'Loading conversation…');
+            try {
+                currentSessionId = id;
+                const [, messages, session] = await Promise.all([
+                    skipListReload ? Promise.resolve() : loadSessions(),
+                    api(`/chat/sessions/${id}/messages`),
+                    api(`/chat/sessions/${id}`),
+                ]);
+                renderMessages(messages);
+                applySettingsToForm(session);
+            } finally {
+                if (!silent) setAppLoading(false);
+            }
+        }
+
+        async function createSession({ skipListReload = false } = {}) {
             const settings = readSettingsFromForm();
             const session = await api('/chat/sessions', {
                 method: 'POST',
                 body: JSON.stringify({ title: 'New chat', ...settings }),
             });
             currentSessionId = session.id;
-            await loadSessions();
+            if (!skipListReload) await loadSessions();
+            else renderSessionList(await api('/chat/sessions'));
             renderMessages([]);
             applySettingsToForm(session);
             return session;
@@ -455,7 +618,9 @@
 
         function closeSettings() {
             els.settingsBackdrop.classList.remove('open');
-            document.body.style.overflow = '';
+            if (!els.deleteBackdrop.classList.contains('open')) {
+                document.body.style.overflow = '';
+            }
         }
 
         async function loadInferenceOptions() {
@@ -585,23 +750,36 @@
             window.location.href = '/auth';
         });
 
+        document.getElementById('close-delete-btn').addEventListener('click', closeDeleteModal);
+        document.getElementById('cancel-delete-btn').addEventListener('click', closeDeleteModal);
+        document.getElementById('confirm-delete-btn').addEventListener('click', confirmDeleteSession);
+        els.deleteBackdrop.addEventListener('click', (e) => {
+            if (e.target === els.deleteBackdrop) closeDeleteModal();
+        });
+        document.getElementById('delete-modal').addEventListener('click', (e) => e.stopPropagation());
+
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && els.settingsBackdrop.classList.contains('open')) closeSettings();
+            if (e.key !== 'Escape') return;
+            if (els.deleteBackdrop.classList.contains('open')) closeDeleteModal();
+            else if (els.settingsBackdrop.classList.contains('open')) closeSettings();
         });
 
         async function init() {
+            setAppLoading(true, 'Loading your conversations…');
+            els.sessionList.innerHTML = '<p class="chat-sidebar-loading">Loading chats…</p>';
             try {
                 const user = await api('/auth/me');
                 document.getElementById('auth-indicator').textContent = user.email || user.username;
                 if (user.role === 'admin') document.getElementById('logs-nav-link').classList.remove('hidden');
                 await loadInferenceOptions();
-                await loadSessions();
-                const sessions = await api('/chat/sessions');
-                if (sessions.length) await selectSession(sessions[0].id);
-                else await createSession();
+                const sessions = await loadSessions();
+                if (sessions.length) await selectSession(sessions[0].id, { skipListReload: true, silent: true });
+                else await createSession({ skipListReload: true });
                 autoResizeInput();
             } catch {
                 window.location.replace('/auth');
+            } finally {
+                setAppLoading(false);
             }
         }
 
