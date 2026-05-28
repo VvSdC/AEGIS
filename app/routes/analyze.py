@@ -9,7 +9,7 @@ Returns structured Pydantic response with allow/response format.
 """
 
 import time
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -23,11 +23,12 @@ from ..schemas import (
     OutputTier1Result,
     OutputTier2Result,
     OutputFinding,
+    InferenceOptionsResponse,
+    InferenceProviderOption,
 )
 from ..engines.guardrails import get_guardrail_engine
-from ..engines.policy_engine import get_policy_engine
 from ..engines.audit_vault import get_audit_vault
-from ..engines.gemini_cli import get_gemini_cli
+from ..engines.inference_providers import get_inference_router
 from ..engines.region_policies import build_compliance_header, get_policies_for_region
 
 router = APIRouter()
@@ -39,6 +40,13 @@ REGION_MAP = {
     "usa": "US",
     "australia": "AUSTRALIA",
 }
+
+
+@router.get("/inference/options", response_model=InferenceOptionsResponse)
+async def inference_options():
+    inference = get_inference_router()
+    options = inference.get_available_provider_options()
+    return InferenceOptionsResponse(providers=[InferenceProviderOption(**o) for o in options])
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
@@ -59,7 +67,6 @@ async def analyze_prompt(
     """
     start_time = time.perf_counter()
     guardrail_engine = get_guardrail_engine()
-    policy_engine = get_policy_engine()
     audit = get_audit_vault()
 
     internal_region = REGION_MAP.get(request.region, "GLOBAL")
@@ -127,7 +134,6 @@ async def analyze_prompt(
             region=internal_region,
         )
 
-        policies = policy_engine.get_policies_for_region(internal_region)
         policy_names = get_policies_for_region(request.region)
 
         tier2_blocked = tier2_filter.blocked
@@ -179,12 +185,13 @@ async def analyze_prompt(
     compliance_header = build_compliance_header(request.region)
     governed_prompt = compliance_header + tier1.filtered_text
 
-    cli = get_gemini_cli()
-    if not cli or not cli.is_available():
+    inference = get_inference_router()
+    provider_name = request.inference_provider
+    if request.model not in inference.get_models_for_provider(provider_name):
         total_latency = time.perf_counter() - start_time
         return AnalyzeResponse(
             allow=False,
-            response="Model unavailable. Gemini CLI is not configured or not reachable.",
+            response=f"Model '{request.model}' is not valid for provider '{provider_name}'.",
             original_prompt=request.prompt,
             tier1=tier1,
             tier2=tier2,
@@ -193,7 +200,7 @@ async def analyze_prompt(
         )
 
     try:
-        model_response = await cli.generate_content_async(governed_prompt)
+        model_response = await inference.generate(provider_name, request.model, governed_prompt)
     except Exception as e:
         total_latency = time.perf_counter() - start_time
         return AnalyzeResponse(
@@ -261,6 +268,8 @@ async def analyze_prompt(
         details={
             "region": request.region,
             "guardrail_mode": request.guardrail_mode,
+            "inference_provider": request.inference_provider,
+            "model": request.model,
             "output_guardrail_mode": output_guardrail_mode,
             "output_safe_to_use": output_guardrail_result.safe_to_use if output_guardrail_result else True,
             "latency_s": round(total_latency, 4),

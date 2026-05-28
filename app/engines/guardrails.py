@@ -22,9 +22,8 @@ except ImportError:
     YARA_AVAILABLE = False
     print("Warning: yara-python not installed. YARA rules will be disabled.")
 
-# Vertex AI / Gemini imports handled dynamically
 from ..config import settings
-from .gemini_cli import get_gemini_cli
+from .inference_providers import get_inference_router
 
 
 @dataclass
@@ -84,13 +83,14 @@ class GuardrailEngine:
         self._compiled_injection_patterns: List[Tuple[re.Pattern, str]] = []
         self._compiled_code_patterns: Dict[str, List[Dict[str, Any]]] = {}  # category -> patterns
         self._yara_rules: Optional[Any] = None
-        self._gemini_model = None
+        self._tier2_provider = None
+        self._tier2_model = None
         
         self._load_prompt_patterns_from_json()
         self._load_pii_patterns_from_json()
         self._load_code_patterns_from_json()
         self._load_yara_rules()
-        self._init_gemini()
+        self._init_tier2_provider()
     
     def _load_prompt_patterns_from_json(self):
         """Load jailbreak and injection patterns from patterns/prompt_patterns.json."""
@@ -280,15 +280,21 @@ class GuardrailEngine:
             except Exception as e:
                 print(f"Error loading YARA rules: {e}")
     
-    def _init_gemini(self):
-        """Initialize Gemini CLI for Tier 2 classification."""
-        cli = get_gemini_cli()
-        if cli.is_available():
-            self._gemini_model = cli
-            print("✅ Guardrails: Using Gemini CLI for Tier 2")
-        else:
-            self._gemini_model = None
-            print("⚠️ Guardrails: Gemini CLI not available, Tier 2 disabled")
+    def _init_tier2_provider(self):
+        """Initialize tier2 provider/model from configured inference providers."""
+        router = get_inference_router()
+        for provider_name in ("cerebras", "openrouter", "huggingface"):
+            options = router.get_models_for_provider(provider_name)
+            provider_options = router.get_available_provider_options()
+            provider_state = next((o for o in provider_options if o["provider"] == provider_name), None)
+            if provider_state and provider_state.get("available") and options:
+                self._tier2_provider = provider_name
+                self._tier2_model = options[0]
+                print(f"✅ Guardrails: Using {provider_name} for Tier 2")
+                return
+        self._tier2_provider = None
+        self._tier2_model = None
+        print("⚠️ Guardrails: No inference provider available, Tier 2 disabled")
     
     def _run_pii_filter(self, text, region=None):
         """
@@ -549,7 +555,7 @@ class GuardrailEngine:
         Run Tier 2 filters: LLM-based deep classification.
         Runs async, non-blocking. Adds findings to tier1_result.
         """
-        if not settings.tier2_enabled or not self._gemini_model:
+        if not settings.tier2_enabled or not self._tier2_provider or not self._tier2_model:
             return tier1_result
         
         start_time = time.perf_counter()
@@ -582,9 +588,8 @@ Respond in JSON format:
 """
         
         try:
-            response_text = await self._gemini_model.generate_content_async(
-                classification_prompt
-            )
+            router = get_inference_router()
+            response_text = await router.generate(self._tier2_provider, self._tier2_model, classification_prompt)
             
             # Extract JSON from response
             import json
@@ -748,14 +753,14 @@ Respond in JSON format:
         """
         start_time = time.perf_counter()
         
-        if not self._gemini_model:
+        if not self._tier2_provider or not self._tier2_model:
             return {
                 "compliant": True,
                 "safety_score": 1.0,
                 "compliance_findings": [],
                 "region": region,
                 "policies_checked": [],
-                "assessment": "Tier 2 assessment unavailable (Gemini not configured).",
+                "assessment": "Tier 2 assessment unavailable (inference provider not configured).",
                 "recommendations": [],
                 "latency_ms": 0.0,
             }
@@ -810,7 +815,8 @@ If the response is safe and compliant, return compliant=true, safety_score close
 """
         
         try:
-            result_text = await self._gemini_model.generate_content_async(assessment_prompt)
+            router = get_inference_router()
+            result_text = await router.generate(self._tier2_provider, self._tier2_model, assessment_prompt)
             
             import json
             json_start = result_text.find('{')

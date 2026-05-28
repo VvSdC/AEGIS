@@ -132,7 +132,7 @@ async def serve_deploy_code():
         "app/models.py",
         "app/schemas.py",
         "app/engines/__init__.py",
-        "app/engines/gemini_cli.py",
+        "app/engines/inference_providers.py",
         "app/engines/guardrails.py",
         "app/engines/risk_scorer.py",
         "app/engines/policy_engine.py",
@@ -160,6 +160,7 @@ async def serve_deploy_code():
         "app/yara_rules/jailbreak.yar",
         "app/yara_rules/pii.yar",
         "requirements.txt",
+        ".env.example",
     ]
     
     backend_dir = os.path.dirname(__file__)

@@ -40,12 +40,10 @@ class Settings(BaseSettings):
         description="CORS allowed origins as JSON array"
     )
     
-    # Google Gemini / Vertex AI
-    gemini_api_key: str = Field(default="", description="Google AI Studio API key (optional if using Vertex AI)")
-    gemini_model: str = Field(default="gemini-2.5-flash", description="Gemini model to use")
-    use_vertex_ai: bool = Field(default=True, description="Use Vertex AI instead of API key")
-    google_cloud_project: str = Field(default="", description="GCP project ID")
-    google_cloud_location: str = Field(default="us-central1", description="GCP location")
+    # Inference providers
+    cerebras_api_key: str = Field(default="", description="Cerebras API key")
+    huggingface_api_key: str = Field(default="", description="Hugging Face Inference API key")
+    openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     
     # Guardrails
     tier1_max_latency_ms: int = Field(default=30, description="Tier 1 filter max latency in ms")

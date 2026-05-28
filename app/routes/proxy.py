@@ -1,6 +1,6 @@
 """
 AEGIS Proxy Routes
-The core proxy endpoint that redirects prompts through AEGIS to Gemini.
+The core proxy endpoint that redirects prompts through AEGIS to configured inference providers.
 
 This is the key endpoint that answers: "How do we redirect prompts to proxy 
 and from there to the actual model?"
@@ -9,16 +9,14 @@ Flow:
 1. App sends prompt to POST /api/v1/proxy
 2. AEGIS runs Tier 1 guardrails (PII, jailbreak, injection detection)
 3. If blocked → return block reason
-4. If passed → forward to Gemini API
-5. Get Gemini response
+4. If passed → forward to selected inference API
+5. Get model response
 6. Run response through output filters
 7. Log to audit vault
 8. Return filtered response to app
 """
 
 import time
-import asyncio
-import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,47 +29,28 @@ from ..schemas import (
 from ..engines.guardrails import get_guardrail_engine
 from ..engines.policy_engine import get_policy_engine
 from ..engines.audit_vault import get_audit_vault
-from ..engines.gemini_cli import get_gemini_cli
+from ..engines.inference_providers import get_inference_router
 
 router = APIRouter()
 
-# Use Gemini CLI for inference (OAuth-based auth)
-_cli = None
-
-def get_gemini_model():
-    """Get or initialize Gemini CLI for inference."""
-    global _cli
-    if _cli is not None:
-        return _cli
-    
-    _cli = get_gemini_cli()
-    
-    if _cli.is_available():
-        print("✅ Using Gemini CLI (OAuth auth)")
-        return _cli
-    else:
-        print("⚠️ Gemini CLI not available")
-        return None
-
-
 @router.post("/proxy", response_model=ProxyResponse)
-async def proxy_to_gemini(
+async def proxy_to_inference(
     request: ProxyRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Proxy a prompt through AEGIS governance layer to Gemini.
+    Proxy a prompt through AEGIS governance layer to inference providers.
     
     This is the main integration point for applications:
     
     **Instead of:**
     ```
-    App → Gemini API
+    App → Inference API
     ```
     
     **Use:**
     ```
-    App → AEGIS /proxy → (Guardrails + Policy + Audit) → Gemini API → Response Filter → App
+    App → AEGIS /proxy → (Guardrails + Policy + Audit) → Inference API → Response Filter → App
     ```
     
     ## Flow:
@@ -79,14 +58,14 @@ async def proxy_to_gemini(
     2. Run Tier 1 guardrails (PII redaction, jailbreak detection)
     3. Check region-specific policies
     4. If blocked: return immediately with reason
-    5. If passed: forward to Gemini
-    6. Filter Gemini response (PII, toxicity)
+    5. If passed: forward to selected provider
+    6. Filter model response (PII, toxicity)
     7. Log everything to audit vault
     8. Return filtered response
     
     ## Example Usage:
     ```python
-    # Instead of calling Gemini directly:
+    # Instead of calling a model provider directly:
     # response = model.generate_content(prompt)
     
     # Route through AEGIS:
@@ -193,16 +172,16 @@ async def proxy_to_gemini(
             "policies_applicable": [p.name for p in policies],
         }
     
-    # Step 4: Forward to Gemini via CLI (only initialize CLI now — hard-blocks short-circuit before this).
-    model = get_gemini_model()
-    if not model:
+    # Step 4: Forward to selected inference provider
+    inference = get_inference_router()
+    if request.model not in inference.get_models_for_provider(request.inference_provider):
         raise HTTPException(
-            status_code=503,
-            detail="Gemini API not configured. Set GEMINI_API_KEY in .env",
+            status_code=400,
+            detail=f"Model '{request.model}' is not valid for provider '{request.inference_provider}'.",
         )
     model_start = time.perf_counter()
     try:
-        model_response = await model.generate_content_async(filtered_prompt)
+        model_response = await inference.generate(request.inference_provider, request.model, filtered_prompt)
     except Exception as e:
         await audit.log(
             db=db,
@@ -211,7 +190,7 @@ async def proxy_to_gemini(
             system_name=request.system_name,
             details={"error": str(e)},
         )
-        raise HTTPException(status_code=502, detail=f"Gemini API error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Inference API error: {str(e)}")
     
     # Step 5: Output guardrails based on output_guardrail_mode
     model_time_ms = (time.perf_counter() - model_start) * 1000
@@ -286,6 +265,7 @@ async def proxy_to_gemini(
             "total_time_ms": elapsed,
             "guardrail_latency_ms": guardrail_latency,
             "model_time_ms": model_time_ms,
+            "inference_provider": request.inference_provider,
             "model": request.model,
         }
     )
@@ -338,17 +318,19 @@ async def proxy_stream(
     (Simplified implementation - production would use SSE or WebSocket)
     """
     # For now, delegate to non-streaming endpoint
-    return await proxy_to_gemini(request, db)
+    return await proxy_to_inference(request, db)
 
 
 @router.get("/proxy/status")
 async def proxy_status():
     """Check proxy connectivity and configuration."""
-    model = get_gemini_model()
+    inference = get_inference_router()
+    options = inference.get_available_provider_options()
     
     return {
-        "gemini_configured": model is not None,
-        "model": settings.gemini_model,
+        "providers": options,
+        "default_provider": "cerebras",
+        "default_model": "llama3.1-8b",
         "tier1_enabled": True,
         "tier2_enabled": settings.tier2_enabled,
         "guardrails_active": True,

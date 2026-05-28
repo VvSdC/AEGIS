@@ -87,6 +87,19 @@
                             </div>
                         </div>
 
+                        <!-- Inference Provider -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Inference Provider</label>
+                            <select id="provider-select" class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"></select>
+                            <p id="provider-status" class="mt-1 text-xs text-slate-500"></p>
+                        </div>
+
+                        <!-- Model Selection -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">Model</label>
+                            <select id="model-select" class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"></select>
+                        </div>
+
                         <!-- Guardrail Selection -->
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-1.5">Guardrail Tier</label>
@@ -241,6 +254,7 @@
                 'Voluntary AI Safety Standard',
             ],
         };
+        let INFERENCE_OPTIONS = [];
 
         function updateRegionActs() {
             const region = document.getElementById('region-select').value;
@@ -251,6 +265,60 @@
 
         document.getElementById('region-select').addEventListener('change', updateRegionActs);
         updateRegionActs();
+
+        function getProviderLabel(provider) {
+            const labels = {
+                cerebras: 'Cerebras',
+                openrouter: 'OpenRouter',
+                huggingface: 'Hugging Face',
+            };
+            return labels[provider] || provider;
+        }
+
+        function populateProviderSelect() {
+            const providerSelect = document.getElementById('provider-select');
+            providerSelect.innerHTML = INFERENCE_OPTIONS.map(p => {
+                const availability = p.available ? '' : ' (not configured)';
+                return `<option value="${p.provider}" ${p.available ? '' : 'disabled'}>${getProviderLabel(p.provider)}${availability}</option>`;
+            }).join('');
+            const firstEnabled = INFERENCE_OPTIONS.find(p => p.available) || INFERENCE_OPTIONS[0];
+            if (firstEnabled) providerSelect.value = firstEnabled.provider;
+            updateModelSelect();
+        }
+
+        function updateModelSelect() {
+            const providerSelect = document.getElementById('provider-select');
+            const modelSelect = document.getElementById('model-select');
+            const providerStatus = document.getElementById('provider-status');
+            const selected = INFERENCE_OPTIONS.find(p => p.provider === providerSelect.value);
+            if (!selected) return;
+            modelSelect.innerHTML = (selected.models || []).map(model => `<option value="${model}">${model}</option>`).join('');
+            if (selected.models && selected.models.length > 0) {
+                modelSelect.value = selected.models[0];
+            }
+            providerStatus.textContent = selected.available
+                ? 'Provider configured and ready.'
+                : 'Provider is not configured in backend environment.';
+        }
+
+        async function loadInferenceOptions() {
+            const providerSelect = document.getElementById('provider-select');
+            const modelSelect = document.getElementById('model-select');
+            try {
+                const res = await fetch(`${API_BASE}/api/v1/inference/options`);
+                if (!res.ok) throw new Error('Failed to load inference options');
+                const data = await res.json();
+                INFERENCE_OPTIONS = data.providers || [];
+            } catch {
+                INFERENCE_OPTIONS = [
+                    { provider: 'cerebras', available: true, models: ['llama3.1-8b', 'Qwen/Qwen3-8B', 'mistralai/Mathstral-7B-v0.1'] },
+                    { provider: 'openrouter', available: false, models: ['mistralai/mistral-7b-instruct', 'meta-llama/llama-3.1-8b-instruct', 'qwen/qwen-2.5-7b-instruct'] },
+                    { provider: 'huggingface', available: false, models: ['mistralai/Mistral-7B-Instruct-v0.3', 'meta-llama/Llama-3.1-8B-Instruct', 'Qwen/Qwen2.5-7B-Instruct'] },
+                ];
+            }
+            populateProviderSelect();
+            providerSelect.addEventListener('change', updateModelSelect);
+        }
 
         function setPrompt(text) {
             document.getElementById('prompt-input').value = text;
@@ -422,6 +490,8 @@
 
             const region = document.getElementById('region-select').value;
             const guardrailMode = document.querySelector('input[name="guardrail_mode"]:checked').value;
+            const inferenceProvider = document.getElementById('provider-select').value;
+            const model = document.getElementById('model-select').value;
 
             btn.disabled = true;
             btn.textContent = 'Analyzing...';
@@ -432,14 +502,14 @@
             renderPipeline([
                 { step: '1', label: 'Tier 1: Pattern Matching', detail: 'Regex, YARA rules, PII detection', state: 'active' },
                 { step: '2', label: 'Tier 2: Deep Analysis', detail: guardrailMode === 'advanced' ? 'LLM classification + policy enforcement' : 'Skipped (basic mode)', state: 'waiting' },
-                { step: '3', label: 'Model Response', detail: 'Generate response via Gemini', state: 'waiting' },
+                { step: '3', label: 'Model Response', detail: 'Generate response via selected inference provider', state: 'waiting' },
             ]);
 
             try {
                 const res = await fetch(`${API_BASE}/api/v1/analyze`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt, region, guardrail_mode: guardrailMode }),
+                    body: JSON.stringify({ prompt, region, guardrail_mode: guardrailMode, inference_provider: inferenceProvider, model }),
                 });
 
                 if (!res.ok) {
@@ -503,6 +573,7 @@
 
         // Init
         checkStatus();
+        loadInferenceOptions();
         setInterval(checkStatus, 10000);
     </script>
 </body>

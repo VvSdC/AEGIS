@@ -11,19 +11,15 @@ sqlalchemy==2.0.30
 aiosqlite==0.20.0  # Async SQLite for dev
 
 # Validation & Serialization
-pydantic==2.7.3
-pydantic-settings==2.3.0
-
-# AI/LLM
-google-genai>=1.0.0
-google-cloud-aiplatform==1.49.0
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
 
 # Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 
 # YARA for pattern matching (optional — needs system libs, skipped in Docker)
-# yara-python==4.5.0
+yara-python==4.5.0
 
 # HTTP Client
 httpx==0.27.0

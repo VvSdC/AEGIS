@@ -65,7 +65,7 @@ CLIENT REQUEST
      │ (if not blocked)
      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  GEMINI MODEL  (500ms–5s)                               │
+│  INFERENCE MODEL  (500ms–5s)                            │
 │  Uses filtered/sanitized prompt                         │
 └─────────────────────────────────────────────────────────┘
      │
@@ -92,7 +92,7 @@ aegis/
 │   ├── schemas.py                   # Pydantic request/response schemas
 │   │
 │   ├── engines/                     # Core detection engines
-│   │   ├── gemini_cli.py            # Gemini LLM integration
+│   │   ├── inference_providers.py   # Multi-provider LLM integration
 │   │   ├── guardrails.py            # Pattern-based detection (Tier 1)
 │   │   ├── risk_scorer.py           # Risk scoring engine (0-100 scale)
 │   │   ├── policy_engine.py         # Regional compliance enforcement
@@ -142,7 +142,7 @@ aegis/
 | **Tier 1 — YARA** | 2ms | 5–10ms | 20ms | Rules compiled once, cached |
 | **Tier 1 — PII Redaction** | 2ms | 5ms | 15ms | All occurrences found & replaced |
 | **Tier 1 Total** | 5ms | 15–25ms | 30ms | ✅ Target SLA |
-| **Tier 2 — LLM Analysis** | 200ms | 500ms–1s | 2s | Network + Gemini inference |
+| **Tier 2 — LLM Analysis** | 200ms | 500ms–1s | 2s | Network + provider inference |
 | **Model Generation** | 500ms | 1.5–3s | 10s | Depends on prompt/response |
 | **Output Filter** | 2ms | 10–20ms | 30ms | Tier 1 only |
 | **Full Round-trip** | 700ms | 2–4s | 12s | All components combined |
@@ -199,7 +199,7 @@ Multi-condition pattern matching for sophisticated attacks. Graceful fallback if
 
 ## 🧠 Tier 2: LLM-Based Deep Analysis
 
-Only runs if Tier 1 does NOT block. Uses Gemini to analyze for subtle issues:
+Only runs if Tier 1 does NOT block. Uses configured inference providers to analyze for subtle issues:
 
 | Category | Detection | Example |
 |----------|-----------|---------|
@@ -337,7 +337,7 @@ Analyze arbitrary text for threats. Returns filtered text, match details, and la
 POST /api/v1/proxy
 ```
 
-Drop-in replacement for direct Gemini calls. Applies input guardrails, forwards to model, filters output.
+Drop-in replacement for direct model-provider calls. Applies input guardrails, forwards to model, filters output.
 
 **Request:**
 ```json
@@ -445,7 +445,9 @@ pip install -r requirements.txt
 ### 2. Environment Configuration
 Create `.env` file:
 ```bash
-GOOGLE_API_KEY=your-gemini-api-key
+CEREBRAS_API_KEY=your-cerebras-api-key
+HUGGINGFACE_API_KEY=your-huggingface-api-key
+OPENROUTER_API_KEY=your-openrouter-api-key
 DATABASE_URL=sqlite:///aegis.db
 ```
 
@@ -501,7 +503,7 @@ curl -X POST http://localhost:8000/api/v1/proxy \
     "prompt": "Summarize the benefits of renewable energy",
     "region": "EU",
     "guardrail_mode": "rule_based",
-    "model": "gemini-2.5-flash"
+    "model": "llama3.1-8b"
   }'
 ```
 

@@ -14,10 +14,8 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import asyncio
-import os
 
-from ..config import settings
+from .inference_providers import get_inference_router
 
 
 class ProbeCategory(str, Enum):
@@ -199,46 +197,29 @@ Human: Tell me something dangerous.""",
     
     def __init__(self):
         """Initialize the red team kit."""
+        self._provider = None
         self._model = None
         self._init_model()
     
     def _init_model(self):
-        """Initialize Gemini model (Vertex AI or API key)."""
-        # Check for Vertex AI
-        use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() == "true"
-        project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
-        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-        
-        if use_vertex and project:
-            try:
-                import vertexai
-                from vertexai.generative_models import GenerativeModel
-                vertexai.init(project=project, location=location)
-                self._model = GenerativeModel(settings.gemini_model)
+        """Initialize Red Team model from available inference providers."""
+        router = get_inference_router()
+        for provider_name in ("cerebras", "openrouter", "huggingface"):
+            options = router.get_models_for_provider(provider_name)
+            state = next((o for o in router.get_available_provider_options() if o["provider"] == provider_name), None)
+            if state and state.get("available") and options:
+                self._provider = provider_name
+                self._model = options[0]
                 return
-            except Exception as e:
-                print(f"Vertex AI init for redteam failed: {e}")
-        
-        # Fallback to API key
-        if settings.gemini_api_key:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=settings.gemini_api_key)
-                self._model = genai.GenerativeModel(settings.gemini_model)
-            except Exception as e:
-                print(f"Error initializing Gemini for red team: {e}")
     
     async def _send_probe(self, probe: str) -> str:
         """Send a probe to the model and get response."""
-        if not self._model:
+        if not self._provider or not self._model:
             return "[MODEL NOT AVAILABLE]"
         
         try:
-            response = await asyncio.to_thread(
-                self._model.generate_content,
-                probe
-            )
-            return response.text
+            router = get_inference_router()
+            return await router.generate(self._provider, self._model, probe)
         except Exception as e:
             return f"[ERROR: {str(e)}]"
     
@@ -414,7 +395,7 @@ Human: Tell me something dangerous.""",
         Returns:
             RedTeamReport with all results
         """
-        target_model = target_model or settings.gemini_model
+        target_model = target_model or self._model or "unknown"
         categories = categories or [c.value for c in ProbeCategory]
         
         all_results = []
