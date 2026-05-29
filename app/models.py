@@ -147,6 +147,8 @@ class ChatSession(Base):
     guardrail_mode: Mapped[str] = mapped_column(String(20), default="basic")
     output_guardrail_mode: Mapped[str] = mapped_column(String(20), default="tier1")
     security_threshold_preset: Mapped[str] = mapped_column(String(20), default="balanced")
+    completion_mode: Mapped[str] = mapped_column(String(20), default="balanced")
+    workflow_meta: Mapped[dict] = mapped_column(JSON, default=dict)
     inference_provider: Mapped[str] = mapped_column(String(30), default="gemini")
     model: Mapped[str] = mapped_column(String(100), default="gemini-2.0-flash")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

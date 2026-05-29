@@ -11,14 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..security_threshold import resolve_security_threshold
 from ..database import get_db
 from ..engines.chat_service import (
+    continue_after_clarification,
     get_session_for_user,
     list_session_messages,
     process_chat_message,
     resolve_chat_message,
+    session_workflow_envelope,
+    update_session_brief,
     _message_to_response,
 )
 from ..models import ChatMessage, ChatSession
 from ..schemas import (
+    ChatClarifyRequest,
     ChatMessageResolveRequest,
     ChatMessageResponse,
     ChatSendMessageRequest,
@@ -26,6 +30,8 @@ from ..schemas import (
     ChatSessionCreate,
     ChatSessionResponse,
     ChatSessionUpdate,
+    ChatTaskBriefUpdate,
+    TaskBrief,
 )
 from ..security import require_authenticated_user
 
@@ -38,6 +44,7 @@ async def _session_response(db: AsyncSession, session: ChatSession) -> ChatSessi
             select(func.count(ChatMessage.id)).where(ChatMessage.session_id == session.id)
         )
     ).scalar_one() or 0
+    envelope = session_workflow_envelope(session)
     return ChatSessionResponse(
         id=session.id,
         title=session.title,
@@ -46,6 +53,12 @@ async def _session_response(db: AsyncSession, session: ChatSession) -> ChatSessi
         output_guardrail_mode=session.output_guardrail_mode,
         security_threshold_preset=session.security_threshold_preset,
         security_threshold=resolve_security_threshold(session.security_threshold_preset),
+        completion_mode=getattr(session, "completion_mode", "balanced") or "balanced",
+        phase=envelope["phase"],
+        task_brief=envelope["task_brief"],
+        execution_plan=envelope["execution_plan"],
+        planned_llm_calls=envelope["planned_llm_calls"],
+        clarification_questions=envelope["clarification_questions"],
         inference_provider=session.inference_provider,
         model=session.model,
         created_at=session.created_at,
@@ -67,6 +80,7 @@ async def create_session(
         guardrail_mode=body.guardrail_mode,
         output_guardrail_mode=body.output_guardrail_mode,
         security_threshold_preset=body.security_threshold_preset,
+        completion_mode=body.completion_mode,
         inference_provider=body.inference_provider,
         model=body.model,
     )
@@ -119,6 +133,7 @@ async def update_session(
     session.guardrail_mode = body.guardrail_mode
     session.output_guardrail_mode = body.output_guardrail_mode
     session.security_threshold_preset = body.security_threshold_preset
+    session.completion_mode = body.completion_mode
     session.inference_provider = body.inference_provider
     session.model = body.model
     if body.title is not None:
@@ -152,6 +167,39 @@ async def get_messages(
         raise HTTPException(status_code=404, detail="Session not found")
     messages = await list_session_messages(db, session_id)
     return [_message_to_response(m) for m in messages]
+
+
+@router.patch("/chat/sessions/{session_id}/brief", response_model=TaskBrief)
+async def patch_session_brief(
+    session_id: int,
+    body: ChatTaskBriefUpdate,
+    user=Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await get_session_for_user(db, session_id, user["username"])
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return await update_session_brief(session, body)
+
+
+@router.post("/chat/sessions/{session_id}/clarify", response_model=ChatSendMessageResponse)
+async def submit_clarification(
+    session_id: int,
+    body: ChatClarifyRequest,
+    user=Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await get_session_for_user(db, session_id, user["username"])
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        return await continue_after_clarification(
+            db, session, body.answers, user["username"]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/chat/sessions/{session_id}/messages", response_model=ChatSendMessageResponse)

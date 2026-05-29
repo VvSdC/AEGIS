@@ -51,8 +51,21 @@ class Settings(BaseSettings):
     
     # Guardrails
     tier1_max_latency_ms: int = Field(default=30, description="Tier 1 filter max latency in ms")
-    tier2_timeout_seconds: int = Field(default=5, description="Tier 2 async timeout")
-    tier2_enabled: bool = Field(default=True, description="Enable Tier 2 LLM filtering")
+    tier1_jailbreak_injection_patterns: bool = Field(
+        default=False,
+        description="Use English regex jailbreak/injection patterns in Tier 1 (off when using Llama Guard)",
+    )
+    tier2_timeout_seconds: int = Field(default=30, description="Tier 2 timeout (Llama Guard on Hugging Face)")
+    tier2_enabled: bool = Field(default=True, description="Enable Tier 2 semantic safety (Llama Guard)")
+    llama_guard_model: str = Field(
+        default="meta-llama/Llama-Guard-3-1B",
+        description="Hugging Face model id for Llama Guard 3 (gated; accept license on HF)",
+    )
+    llama_guard_max_tokens: int = Field(default=128, description="Max tokens for Llama Guard classification output")
+    llama_guard_max_input_chars: int = Field(
+        default=12000,
+        description="Truncate prompts sent to Llama Guard",
+    )
     
     # Audit
     audit_hash_algorithm: str = Field(default="sha256", description="Hash algorithm for audit chain")

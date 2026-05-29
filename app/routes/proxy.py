@@ -61,7 +61,7 @@ async def proxy_to_inference(
     3. Check region-specific policies
     4. If blocked: return immediately with reason
     5. If passed: forward to selected provider
-    6. Filter model response (PII, toxicity)
+    6. Filter model response (PII, insecure code)
     7. Log everything to audit vault
     8. Return filtered response
     

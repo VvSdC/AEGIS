@@ -37,30 +37,35 @@
                 </div>
             </header>
 
+            <div class="chat-notice hidden" id="chat-notice" role="status" aria-live="polite">
+                <p class="chat-notice-text" id="chat-notice-text"></p>
+                <button type="button" id="chat-notice-action" class="btn-primary text-sm hidden">Continue</button>
+            </div>
+
             <div class="chat-messages" id="chat-messages">
                 <div class="chat-messages-inner" id="messages-inner">
                     <div class="chat-empty" id="chat-empty">
-                        <span class="chat-empty-badge">Governed AI</span>
-                        <h2>Start a safe conversation</h2>
-                        <p class="chat-empty-lead">Type a message below. AEGIS screens every prompt for sensitive data and policy risks before the model replies.</p>
+                        <span class="chat-empty-badge">Protected chat</span>
+                        <h2>Ask anything safely</h2>
+                        <p class="chat-empty-lead">We help keep personal details out of your messages and review answers before you rely on them. Type below to start — most people can use the default settings.</p>
                         <ol class="chat-steps">
-                            <li><span class="chat-step-num">1</span><span><strong>You send a message</strong> — it appears on the right.</span></li>
-                            <li><span class="chat-step-num">2</span><span><strong>Safety checks run</strong> — expand “Safety checks” on replies to see each step.</span></li>
-                            <li><span class="chat-step-num">3</span><span><strong>The AI responds</strong> — code blocks include a Copy button.</span></li>
+                            <li><span class="chat-step-num">1</span><span><strong>You write a message</strong> and send it.</span></li>
+                            <li><span class="chat-step-num">2</span><span><strong>We check it</strong> for things like ID numbers or card details you may not want to share.</span></li>
+                            <li><span class="chat-step-num">3</span><span><strong>You get an answer</strong>. Sometimes we will ask you to confirm before showing it.</span></li>
                         </ol>
-                        <p class="chat-starter-label">Try an example (click to fill the box):</p>
+                        <p class="chat-starter-label">Try an example:</p>
                         <div class="chat-starters">
                             <button type="button" class="chat-starter-card quick-prompt-btn" data-prompt="What is the capital of France?">
-                                <strong>Everyday question</strong>
-                                <span>Safe prompt — should pass all checks and get a normal answer.</span>
+                                <strong>Simple question</strong>
+                                <span>Good for a first try.</span>
                             </button>
-                            <button type="button" class="chat-starter-card quick-prompt-btn" data-prompt="Write a Python function that returns the factorial of n.">
-                                <strong>Code example</strong>
-                                <span>See formatted, copyable code in the response.</span>
+                            <button type="button" class="chat-starter-card quick-prompt-btn" data-prompt="Help me write a short email thanking a colleague for their help on a project.">
+                                <strong>Writing help</strong>
+                                <span>Everyday use.</span>
                             </button>
-                            <button type="button" class="chat-starter-card quick-prompt-btn" data-prompt="My PAN is ABCDE1234F and Aadhaar is 2345 6789 0123">
-                                <strong>PII test</strong>
-                                <span>Contains personal data — shows how blocking or redaction works.</span>
+                            <button type="button" class="chat-starter-card quick-prompt-btn" data-prompt="Explain what a strong password is and give three tips.">
+                                <strong>Safety tips</strong>
+                                <span>Learn how we help with sensitive topics.</span>
                             </button>
                         </div>
                     </div>
@@ -76,13 +81,13 @@
                                 <span class="meta-model" id="composer-model">Select model</span>
                             </div>
                             <div class="chat-composer-actions">
-                                <button type="button" id="settings-btn" class="chat-icon-btn" title="Chat settings" aria-label="Chat settings">⚙</button>
+                                <button type="button" id="settings-btn" class="chat-icon-btn" title="Conversation options" aria-label="Conversation options">⚙</button>
                                 <button type="submit" id="send-btn" class="chat-send-btn" disabled aria-label="Send message">↑</button>
                             </div>
                         </div>
                     </div>
                 </form>
-                <p class="chat-composer-hint">Press Enter to send · Shift+Enter for a new line · ⚙ to change region, guardrails, or model</p>
+                <p class="chat-composer-hint">Enter to send · Shift+Enter for a new line · ⚙ opens options for this chat (read the descriptions before changing anything)</p>
             </div>
         </div>
     </div>
@@ -91,103 +96,120 @@
         <div class="chat-modal chat-modal-settings" id="settings-modal">
             <div class="chat-modal-header">
                 <div>
-                    <h2 id="settings-modal-title">Chat settings</h2>
-                    <p>Applied to this conversation only. Adjust before your next message.</p>
+                    <h2 id="settings-modal-title">Options for this chat</h2>
+                    <p>These apply only here. Read each section before changing anything — defaults work for most people.</p>
                 </div>
                 <button type="button" class="chat-modal-close" id="close-settings-btn" aria-label="Close">×</button>
             </div>
             <div class="chat-modal-body chat-settings-grid">
-                <section class="chat-settings-col" aria-labelledby="settings-col-governance">
-                    <h3 class="chat-settings-section-title" id="settings-col-governance">Compliance &amp; screening</h3>
+                <div class="chat-settings-intro chat-settings-span">
+                    <p id="settings-summary-live" class="chat-settings-live-summary" aria-live="polite"></p>
+                </div>
+
+                <section class="chat-settings-col" aria-labelledby="settings-col-location">
+                    <h3 class="chat-settings-section-title" id="settings-col-location">Where you are</h3>
 
                     <div class="chat-field">
-                        <label for="settings-region">Region</label>
-                        <p class="field-hint">Compliance rules for prompts and responses.</p>
+                        <label for="settings-region">Country or region</label>
+                        <p class="field-hint">We use this to apply the right privacy and safety rules for your messages and answers. Pick the region that best matches you or your organization.</p>
                         <select id="settings-region">
                             <option value="india">India</option>
                             <option value="china">China</option>
                             <option value="europe">Europe</option>
-                            <option value="usa">USA</option>
+                            <option value="usa">United States</option>
                             <option value="australia">Australia</option>
-                        </select>
-                    </div>
-
-                    <div class="chat-field">
-                        <label>Input screening</label>
-                        <p class="field-hint">Checks on messages you send.</p>
-                        <div class="chat-radio-grid chat-radio-inline">
-                            <label class="chat-radio-card"><input type="radio" name="guardrail_mode" value="basic" checked> Basic<br><span class="text-slate-500 text-xs">Fast scan</span></label>
-                            <label class="chat-radio-card"><input type="radio" name="guardrail_mode" value="advanced"> Advanced<br><span class="text-slate-500 text-xs">+ policy review</span></label>
-                        </div>
-                    </div>
-
-                    <div class="chat-field">
-                        <label for="settings-output">Output screening</label>
-                        <p class="field-hint">Checks on the model reply before delivery.</p>
-                        <select id="settings-output">
-                            <option value="tier1">Standard — flag issues</option>
-                            <option value="tier2">Strict — compliance review</option>
-                            <option value="none">Off — not recommended</option>
                         </select>
                     </div>
                 </section>
 
-                <section class="chat-settings-col" aria-labelledby="settings-col-model">
-                    <h3 class="chat-settings-section-title" id="settings-col-model">Model &amp; code review</h3>
+                <section class="chat-settings-col" aria-labelledby="settings-col-messages">
+                    <h3 class="chat-settings-section-title" id="settings-col-messages">Before you get an answer</h3>
 
                     <div class="chat-field">
-                        <label for="settings-provider">AI provider</label>
-                        <p class="field-hint">Shown beside the message box.</p>
+                        <label>When your question is unclear</label>
+                        <p class="field-hint">Sometimes we ask a few short questions so we understand what you need. This happens before we write a full answer.</p>
+                        <div class="chat-radio-grid chat-threshold-stack">
+                            <label class="chat-radio-card">
+                                <input type="radio" name="completion_mode" value="fast">
+                                <span class="chat-radio-card-title">Answer right away</span>
+                                <span class="chat-radio-card-sub">We try to answer even if the question is vague. Fastest option.</span>
+                            </label>
+                            <label class="chat-radio-card">
+                                <input type="radio" name="completion_mode" value="balanced" checked>
+                                <span class="chat-radio-card-title">Ask when needed</span>
+                                <span class="chat-radio-card-sub">Recommended. We only ask follow-up questions when your message is unclear.</span>
+                            </label>
+                            <label class="chat-radio-card">
+                                <input type="radio" name="completion_mode" value="clarify_first">
+                                <span class="chat-radio-card-title">Always ask first</span>
+                                <span class="chat-radio-card-sub">We ask a few questions before every first answer in this chat.</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="chat-field">
+                        <label>Checking what you send</label>
+                        <p class="field-hint">We look for personal details (like ID or card numbers) in your messages before the AI replies.</p>
+                        <div class="chat-radio-grid chat-threshold-stack">
+                            <label class="chat-radio-card">
+                                <input type="radio" name="guardrail_mode" value="basic" checked>
+                                <span class="chat-radio-card-title">Standard</span>
+                                <span class="chat-radio-card-sub">Quick check for personal details. Recommended for everyday use.</span>
+                            </label>
+                            <label class="chat-radio-card">
+                                <input type="radio" name="guardrail_mode" value="advanced">
+                                <span class="chat-radio-card-title">Extra safety</span>
+                                <span class="chat-radio-card-sub">Standard check plus a deeper review. Takes a bit longer.</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="chat-settings-col" aria-labelledby="settings-col-answers">
+                    <h3 class="chat-settings-section-title" id="settings-col-answers">The answer you receive</h3>
+
+                    <div class="chat-field">
+                        <label for="settings-output">Checking the reply</label>
+                        <p class="field-hint">Before you see the full answer, we can review it for personal details, unsafe instructions, or risky code.</p>
+                        <select id="settings-output">
+                            <option value="tier1">Standard — personal details and code basics</option>
+                            <option value="tier2">Thorough — includes an extra policy review (slower)</option>
+                            <option value="none">Minimal — skip extra checks (not recommended)</option>
+                        </select>
+                    </div>
+
+                    <div class="chat-field">
+                        <label for="settings-provider">Who writes the answer</label>
+                        <p class="field-hint">Choose the AI service for this chat. Different services may answer slightly differently.</p>
                         <select id="settings-provider"></select>
                     </div>
 
                     <div class="chat-field">
-                        <label for="settings-model">Model</label>
-                        <p class="field-hint">Version used for replies in this chat.</p>
+                        <label for="settings-model">Answer style</label>
+                        <p class="field-hint">Some options are faster; others may give longer or more detailed replies.</p>
                         <select id="settings-model"></select>
                     </div>
 
                     <div class="chat-field">
-                        <label>Code security threshold</label>
-                        <p class="field-hint">Higher = fewer regen prompts; lower = more interruptions for possible vulnerabilities.</p>
+                        <label>When the answer includes code</label>
+                        <p class="field-hint">If the reply contains code, we may ask you to review it before showing it. Pick how often we should interrupt you.</p>
                         <div class="chat-radio-grid chat-threshold-stack">
                             <label class="chat-radio-card">
                                 <input type="radio" name="security_threshold_preset" value="strict">
-                                <span class="chat-radio-card-title">Strict · 0.95</span>
-                                <span class="chat-radio-card-sub">Production &amp; customer-facing code</span>
+                                <span class="chat-radio-card-title">Cautious</span>
+                                <span class="chat-radio-card-sub">Best for work you will share with others or put online.</span>
                             </label>
                             <label class="chat-radio-card">
                                 <input type="radio" name="security_threshold_preset" value="balanced" checked>
-                                <span class="chat-radio-card-title">Balanced · 0.90</span>
-                                <span class="chat-radio-card-sub">Recommended default</span>
+                                <span class="chat-radio-card-title">Balanced</span>
+                                <span class="chat-radio-card-sub">Good default for most people.</span>
                             </label>
                             <label class="chat-radio-card">
                                 <input type="radio" name="security_threshold_preset" value="quiet">
-                                <span class="chat-radio-card-title">Quiet · 0.85</span>
-                                <span class="chat-radio-card-sub">POCs, demos &amp; drafts</span>
+                                <span class="chat-radio-card-title">Fewer interruptions</span>
+                                <span class="chat-radio-card-sub">For drafts and brainstorming. Always double-check code yourself.</span>
                             </label>
                         </div>
-                    </div>
-                </section>
-
-                <section class="chat-settings-span" aria-labelledby="settings-threshold-guide-title">
-                    <div class="chat-threshold-guide">
-                        <p class="chat-threshold-guide-title" id="settings-threshold-guide-title">When to use each threshold</p>
-                        <div class="chat-threshold-guide-grid">
-                            <div class="chat-threshold-guide-item">
-                                <strong>Strict</strong>
-                                <p>Production services, auth, payments, and anything shipped to users. We only ask you to regenerate when we’re highly confident there’s a real issue.</p>
-                            </div>
-                            <div class="chat-threshold-guide-item">
-                                <strong>Balanced</strong>
-                                <p>Internal tools, scripts, and everyday learning. A good default for most chats.</p>
-                            </div>
-                            <div class="chat-threshold-guide-item">
-                                <strong>Quiet</strong>
-                                <p>Spikes and brainstorming. Fewer prompts; review generated code yourself before reuse.</p>
-                            </div>
-                        </div>
-                        <p class="chat-threshold-guide-note">Critical code issues may still be flagged separately. PII in output always uses its own review step (redact by default).</p>
                     </div>
                 </section>
             </div>
@@ -214,32 +236,49 @@
         </div>
     </div>
 
+    <div class="chat-modal-backdrop" id="clarify-backdrop" role="dialog" aria-modal="true" aria-labelledby="clarify-modal-title">
+        <div class="chat-modal chat-modal-lg" id="clarify-modal">
+            <div class="chat-modal-header">
+                <div>
+                    <h2 id="clarify-modal-title">Help us understand your question</h2>
+                    <p id="clarify-modal-desc">Short answers help us give you a better reply. We have not written the full answer yet.</p>
+                </div>
+                <button type="button" class="chat-modal-close" id="close-clarify-btn" aria-label="Close">×</button>
+            </div>
+            <div class="chat-modal-body" id="clarify-questions"></div>
+            <div class="chat-modal-footer">
+                <button type="button" id="cancel-clarify-btn" class="btn-secondary text-sm">Later</button>
+                <button type="button" id="submit-clarify-btn" class="btn-primary text-sm">Continue</button>
+            </div>
+        </div>
+    </div>
+
     <div class="chat-modal-backdrop" id="review-backdrop" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
         <div class="chat-modal chat-modal-lg" id="review-modal">
             <div class="chat-modal-header">
                 <div>
-                    <h2 id="review-modal-title">Review model response</h2>
-                    <p id="review-modal-desc">Check PII and code security before this response is delivered.</p>
+                    <h2 id="review-modal-title">Check this answer before we show it</h2>
+                    <p id="review-modal-desc">We found something you should look at. Choose how to continue.</p>
                 </div>
                 <button type="button" class="chat-modal-close" id="close-review-btn" aria-label="Close">×</button>
             </div>
             <div class="chat-modal-body">
                 <div class="chat-review-preview" id="review-preview"></div>
                 <div id="review-pii-section" class="chat-review-section hidden">
-                    <h3>Personal data in output</h3>
-                    <p class="field-hint">Unchecked items will be redacted. Check only what may stay in the delivered response.</p>
+                    <h3>Personal details in the answer</h3>
+                    <p class="field-hint">Leave a box unchecked to hide that detail in the answer we show you. Only check a box if you are sure it is safe to keep.</p>
                     <div id="review-pii-list" class="chat-pii-checklist"></div>
                 </div>
                 <div id="review-code-section" class="chat-review-section hidden">
-                    <h3>Code security</h3>
-                    <p class="field-hint">Issues above your session threshold. Regenerate to ask the model to fix them, or accept if you understand the risk.</p>
+                    <h3>Code in the answer</h3>
+                    <p class="field-hint">We noticed possible security issues. You can ask for a safer version or accept the answer if you understand the risk.</p>
                     <ul id="review-code-list" class="chat-code-findings"></ul>
                 </div>
             </div>
             <div class="chat-modal-footer chat-review-footer">
-                <button type="button" id="review-redact-btn" class="btn-secondary text-sm hidden">Apply PII redaction</button>
-                <button type="button" id="review-regen-btn" class="btn-secondary text-sm hidden">Regenerate safely</button>
-                <button type="button" id="review-accept-btn" class="btn-primary text-sm">Accept & deliver</button>
+                <button type="button" id="review-redact-btn" class="btn-secondary text-sm hidden">Hide selected details</button>
+                <button type="button" id="review-regen-btn" class="btn-secondary text-sm hidden">Ask for a safer version</button>
+                <button type="button" id="review-accept-btn" class="btn-primary text-sm">Show this answer</button>
             </div>
         </div>
     </div>
@@ -253,6 +292,8 @@
         let sending = false;
 
         let pendingReviewMessageId = null;
+        let currentSessionMeta = null;
+        let clarifyQuestions = [];
 
         const els = {
             sessionList: document.getElementById('session-list'),
@@ -264,6 +305,10 @@
             settingsBackdrop: document.getElementById('settings-backdrop'),
             deleteBackdrop: document.getElementById('delete-backdrop'),
             reviewBackdrop: document.getElementById('review-backdrop'),
+            clarifyBackdrop: document.getElementById('clarify-backdrop'),
+            chatNotice: document.getElementById('chat-notice'),
+            chatNoticeText: document.getElementById('chat-notice-text'),
+            chatNoticeAction: document.getElementById('chat-notice-action'),
             providerSelect: document.getElementById('settings-provider'),
             modelSelect: document.getElementById('settings-model'),
             composerMeta: document.getElementById('composer-meta'),
@@ -400,13 +445,142 @@
             return '<span class="icon skipped">○</span>';
         }
 
+        const PIPELINE_STEP_LABELS = {
+            tier1: 'Checked your message',
+            tier2: 'Extra safety review',
+            clarify: 'Asked a few questions',
+            model: 'Prepared the answer',
+            output: 'Checked the answer',
+        };
+
+        const REGION_LABELS = {
+            india: 'India',
+            china: 'China',
+            europe: 'Europe',
+            usa: 'United States',
+            australia: 'Australia',
+        };
+
+        function friendlyPipelineStep(step) {
+            const label = PIPELINE_STEP_LABELS[step.id] || step.label;
+            let detail = step.detail || '';
+            if (/llama|llm|tier|guard|pii screening|fast screening/i.test(detail)) {
+                if (step.state === 'blocked') detail = 'We could not continue with this message.';
+                else if (step.state === 'done') detail = 'Done';
+                else if (step.state === 'skipped') detail = 'Not needed this time';
+                else if (step.state === 'active') detail = 'In progress…';
+            }
+            return { ...step, label, detail };
+        }
+
+        function renderUserNotice(session) {
+            currentSessionMeta = session;
+            if (!session || !currentSessionId) {
+                els.chatNotice.classList.add('hidden');
+                return;
+            }
+            const needsClarify = session.phase === 'clarifying' &&
+                (session.clarification_questions?.length || clarifyQuestions.length);
+            if (!needsClarify) {
+                els.chatNotice.classList.add('hidden');
+                return;
+            }
+            clarifyQuestions = session.clarification_questions || clarifyQuestions;
+            els.chatNoticeText.textContent =
+                'We need a little more information before we can answer. Please answer the short questions.';
+            els.chatNoticeAction.textContent = 'Answer questions';
+            els.chatNoticeAction.classList.remove('hidden');
+            els.chatNotice.classList.remove('hidden');
+        }
+
+        function updateSettingsSummary() {
+            const el = document.getElementById('settings-summary-live');
+            if (!el) return;
+            const s = readSettingsFromForm();
+            const region = REGION_LABELS[s.region] || s.region;
+            const unclear = { fast: 'Answer right away', balanced: 'Ask when needed', clarify_first: 'Always ask first' }[s.completion_mode] || 'Ask when needed';
+            const inputCheck = s.guardrail_mode === 'advanced' ? 'Extra safety on what you send' : 'Standard check on what you send';
+            const outputCheck = { tier1: 'Standard reply check', tier2: 'Thorough reply check', none: 'Minimal reply check' }[s.output_guardrail_mode] || 'Standard reply check';
+            const code = { strict: 'Cautious code review', balanced: 'Balanced code review', quiet: 'Fewer code interruptions' }[s.security_threshold_preset] || 'Balanced code review';
+            const provider = PROVIDER_LABELS[s.inference_provider] || s.inference_provider;
+            const model = getModelLabel(s.inference_provider, s.model);
+            el.textContent = `Right now: ${region} · ${unclear} · ${inputCheck} · ${outputCheck} · ${code} · Answers from ${provider}${model ? ` (${model})` : ''}.`;
+        }
+
+        function openClarifyModal(questions) {
+            clarifyQuestions = questions || clarifyQuestions || [];
+            const container = document.getElementById('clarify-questions');
+            container.innerHTML = clarifyQuestions.map((q) => {
+                const choices = (q.choices || []).map((c) =>
+                    `<label class="chat-clarify-choice"><input type="radio" name="clarify-${escapeHtml(q.id)}" value="${escapeHtml(c)}"> ${escapeHtml(c)}</label>`
+                ).join('');
+                return `<div class="chat-clarify-q" data-qid="${escapeHtml(q.id)}">
+                    <label class="chat-clarify-label">${escapeHtml(q.text)}</label>
+                    ${choices ? `<div class="chat-clarify-choices">${choices}</div>` : ''}
+                    <input type="text" class="chat-clarify-text" placeholder="Your answer" data-qid="${escapeHtml(q.id)}">
+                </div>`;
+            }).join('');
+            els.clarifyBackdrop.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeClarifyModal() {
+            els.clarifyBackdrop.classList.remove('open');
+            if (!els.settingsBackdrop.classList.contains('open') && !els.deleteBackdrop.classList.contains('open') &&
+                !els.reviewBackdrop.classList.contains('open')) {
+                document.body.style.overflow = '';
+            }
+        }
+
+        function collectClarifyAnswers() {
+            const answers = {};
+            clarifyQuestions.forEach((q) => {
+                const radio = document.querySelector(`input[name="clarify-${q.id}"]:checked`);
+                const text = document.querySelector(`.chat-clarify-text[data-qid="${q.id}"]`);
+                const val = (text?.value || '').trim() || (radio?.value || '');
+                if (val) answers[q.id] = val;
+            });
+            return answers;
+        }
+
+        async function submitClarification() {
+            if (!currentSessionId) return;
+            const answers = collectClarifyAnswers();
+            if (!Object.keys(answers).length) {
+                alert('Please answer at least one question.');
+                return;
+            }
+            setAppLoading(true, 'Getting your answer…');
+            closeClarifyModal();
+            try {
+                const res = await api(`/chat/sessions/${currentSessionId}/clarify`, {
+                    method: 'POST',
+                    body: JSON.stringify({ answers, continue_generation: true }),
+                });
+                els.messagesInner.insertAdjacentHTML('beforeend',
+                    renderAssistantBubble(res.assistant_message));
+                if (res.assistant_message.output_review?.requires_user_action) {
+                    openReviewModal(res.assistant_message);
+                }
+                const session = await api(`/chat/sessions/${currentSessionId}`);
+                renderUserNotice(session);
+                await loadSessions();
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                setAppLoading(false);
+            }
+        }
+
         function renderPipeline(steps, { open = false } = {}) {
             if (!steps?.length) return '';
-            const blocked = steps.some((s) => s.state === 'blocked');
-            const done = steps.filter((s) => s.state === 'done').length;
-            let summary = blocked ? 'Safety checks — blocked' : `Safety checks — ${done}/${steps.length} passed`;
-            if (steps.some((s) => s.state === 'active')) summary = 'Safety checks — running…';
-            const inner = steps.map((s) => `
+            const friendly = steps.map(friendlyPipelineStep);
+            const blocked = friendly.some((s) => s.state === 'blocked');
+            const active = friendly.some((s) => s.state === 'active');
+            let summary = 'What we checked';
+            if (blocked) summary = 'We could not complete this message';
+            else if (active) summary = 'Working on your message…';
+            const inner = friendly.map((s) => `
                 <div class="chat-pipeline-step">
                     ${pipelineIcon(s.state)}
                     <div>
@@ -414,7 +588,8 @@
                         ${s.detail ? `<div class="detail">${escapeHtml(s.detail)}</div>` : ''}
                     </div>
                 </div>`).join('');
-            return `<details class="chat-pipeline-details${blocked ? ' blocked' : ''}"${open ? ' open' : ''}>
+            const shouldOpen = open || blocked;
+            return `<details class="chat-pipeline-details${blocked ? ' blocked' : ''}"${shouldOpen ? ' open' : ''}>
                 <summary class="chat-pipeline-summary">${escapeHtml(summary)}</summary>
                 <div class="chat-pipeline">${inner}</div>
             </details>`;
@@ -423,9 +598,9 @@
         function renderUserBubble(msg, ephemeralText) {
             let text = msg.content;
             if (msg.storage_mode === 'withheld') {
-                text = ephemeralText || '[Message not retained — blocked by policy]';
+                text = ephemeralText || '[Your message was not saved because it could not be sent safely]';
             } else if (msg.storage_mode === 'redacted') {
-                text = msg.content || '[Redacted for storage]';
+                text = msg.content || '[Some details were hidden when we saved this message]';
             }
             const withheld = msg.storage_mode === 'withheld' ? ' withheld' : '';
             const needsRichText = msg.storage_mode !== 'withheld' && (
@@ -467,8 +642,8 @@
             const icon = isSafe ? '✓' : (level === 'danger' ? '✕' : '⚠');
 
             const headline = isSafe
-                ? 'Output is safe to use'
-                : 'Vulnerabilities / Issues found in model identified';
+                ? 'This answer looks fine'
+                : 'Please review this answer';
 
             let body = '';
             if (!isSafe) {
@@ -507,11 +682,17 @@
             const review = msg.output_review;
             const pending = review?.status === 'pending_review' && review?.requires_user_action;
             let body = '';
-            if (pending) {
+            if (msg.requires_clarification && (msg.clarification_questions?.length)) {
+                body = `<div class="chat-clarify-pending">
+                    <p class="chat-review-pending-title">A few quick questions</p>
+                    <p class="chat-review-pending-desc">Your answer is not ready yet. Please answer the short questions so we understand what you need.</p>
+                    <button type="button" class="btn-secondary text-sm chat-open-clarify-btn">Answer questions</button>
+                </div>`;
+            } else if (pending) {
                 body = `<div class="chat-review-pending" data-message-id="${msg.id}">
-                    <p class="chat-review-pending-title">Response held for your review</p>
-                    <p class="chat-review-pending-desc">PII or code security findings need your decision before delivery.</p>
-                    <button type="button" class="btn-secondary text-sm chat-open-review-btn" data-message-id="${msg.id}">Review response</button>
+                    <p class="chat-review-pending-title">Please check this answer</p>
+                    <p class="chat-review-pending-desc">We found personal details or code that may need your OK before we show the full reply.</p>
+                    <button type="button" class="btn-secondary text-sm chat-open-review-btn" data-message-id="${msg.id}">Review answer</button>
                 </div>`;
             } else if (msg.content) {
                 body = `<div class="chat-bubble-text">${formatMessageContent(msg.content)}</div>`;
@@ -544,7 +725,7 @@
                 piiList.innerHTML = piiFindings.map((f) => `
                     <label class="chat-pii-check">
                         <input type="checkbox" value="${escapeHtml(f.id)}">
-                        <span><strong>${escapeHtml(f.label || 'PII')}</strong> — keep in output</span>
+                        <span><strong>${escapeHtml(f.label || 'Personal detail')}</strong> — keep in the answer</span>
                         <span class="chat-pii-sample">${escapeHtml(f.matched_text || '')}</span>
                     </label>`).join('');
             } else {
@@ -565,15 +746,15 @@
             document.getElementById('review-redact-btn').classList.toggle('hidden', !piiFindings.length);
             document.getElementById('review-regen-btn').classList.toggle('hidden', !review?.code_regen_available);
             document.getElementById('review-regen-btn').textContent = review?.regenerations_remaining != null
-                ? `Regenerate safely (${review.regenerations_remaining} left)`
-                : 'Regenerate safely';
+                ? `Ask for a safer version (${review.regenerations_remaining} left)`
+                : 'Ask for a safer version';
 
             const desc = [];
-            if (piiFindings.length) desc.push('PII detected');
-            if (review?.trigger_reasons?.includes('insecure_code')) desc.push('code security review required');
+            if (piiFindings.length) desc.push('personal details in the answer');
+            if (review?.trigger_reasons?.includes('insecure_code')) desc.push('possible code issues');
             document.getElementById('review-modal-desc').textContent = desc.length
-                ? `${desc.join(' · ')} — choose how to deliver this response.`
-                : 'Review this response before delivery.';
+                ? `We noticed ${desc.join(' and ')}. Choose how to continue.`
+                : 'Please look over this answer before we show it in the chat.';
         }
 
         function openReviewModal(msg) {
@@ -585,7 +766,8 @@
         function closeReviewModal() {
             pendingReviewMessageId = null;
             els.reviewBackdrop.classList.remove('open');
-            if (!els.settingsBackdrop.classList.contains('open') && !els.deleteBackdrop.classList.contains('open')) {
+            if (!els.settingsBackdrop.classList.contains('open') && !els.deleteBackdrop.classList.contains('open') &&
+                !els.clarifyBackdrop.classList.contains('open')) {
                 document.body.style.overflow = '';
             }
         }
@@ -653,10 +835,12 @@
         function updateComposerMeta() {
             const prov = els.providerSelect.value;
             const model = els.modelSelect.value;
-            const modelLabel = prov && model ? getModelLabel(prov, model) : 'Select model';
             const providerLabel = PROVIDER_LABELS[prov] || prov || '';
-            els.composerModel.textContent = modelLabel;
-            els.composerMeta.title = providerLabel ? `${providerLabel} · ${modelLabel}` : modelLabel;
+            const modelLabel = prov && model ? getModelLabel(prov, model) : '';
+            els.composerModel.textContent = providerLabel || 'Choose who answers';
+            els.composerMeta.title = modelLabel
+                ? `${providerLabel || prov} — ${modelLabel}`
+                : (providerLabel || 'Open options to choose who writes answers');
         }
 
         function setAppLoading(loading, message) {
@@ -759,6 +943,7 @@
                 ]);
                 renderMessages(messages);
                 applySettingsToForm(session);
+                renderUserNotice(session);
             } finally {
                 if (!silent) setAppLoading(false);
             }
@@ -775,6 +960,7 @@
             else renderSessionList(await api('/chat/sessions'));
             renderMessages([]);
             applySettingsToForm(session);
+            renderUserNotice(session);
             return session;
         }
 
@@ -784,6 +970,7 @@
                 guardrail_mode: document.querySelector('input[name="guardrail_mode"]:checked').value,
                 output_guardrail_mode: document.getElementById('settings-output').value,
                 security_threshold_preset: document.querySelector('input[name="security_threshold_preset"]:checked').value,
+                completion_mode: document.querySelector('input[name="completion_mode"]:checked').value,
                 inference_provider: els.providerSelect.value,
                 model: els.modelSelect.value,
             };
@@ -797,6 +984,9 @@
             const preset = session.security_threshold_preset || 'balanced';
             const th = document.querySelector(`input[name="security_threshold_preset"][value="${preset}"]`);
             if (th) th.checked = true;
+            const cm = session.completion_mode || 'balanced';
+            const cmEl = document.querySelector(`input[name="completion_mode"][value="${cm}"]`);
+            if (cmEl) cmEl.checked = true;
             if (session.inference_provider) els.providerSelect.value = session.inference_provider;
             updateModelOptions();
             if (session.model) els.modelSelect.value = session.model;
@@ -811,17 +1001,21 @@
                 body: JSON.stringify(body),
             });
             applySettingsToForm(session);
+            const msgCount = els.messagesInner.querySelectorAll('.chat-row').length;
+            renderUserNotice(session);
             closeSettings();
         }
 
         function openSettings() {
+            updateSettingsSummary();
             els.settingsBackdrop.classList.add('open');
             document.body.style.overflow = 'hidden';
         }
 
         function closeSettings() {
             els.settingsBackdrop.classList.remove('open');
-            if (!els.deleteBackdrop.classList.contains('open') && !els.reviewBackdrop.classList.contains('open')) {
+            if (!els.deleteBackdrop.classList.contains('open') && !els.reviewBackdrop.classList.contains('open') &&
+                !els.clarifyBackdrop.classList.contains('open')) {
                 document.body.style.overflow = '';
             }
         }
@@ -855,12 +1049,7 @@
 
             const userHtml = `<div class="chat-row user"><div class="chat-bubble user">${escapeHtml(text)}</div></div>`;
             const loadingHtml = `<div class="chat-row assistant" id="pending-assistant">
-                <div class="chat-bubble assistant">${renderPipeline([
-                    { id: 'tier1', label: 'Fast screening', state: 'active', detail: 'Running…' },
-                    { id: 'tier2', label: 'Deep policy review', state: 'waiting' },
-                    { id: 'model', label: 'Model response', state: 'waiting' },
-                    { id: 'output', label: 'Output safety check', state: 'waiting' },
-                ], { open: true })}</div></div>`;
+                <div class="chat-bubble assistant"><p class="chat-pending-text">Working on your answer…</p></div></div>`;
 
             els.chatEmpty.classList.add('hidden');
             els.messagesInner.querySelectorAll('.chat-row').forEach((row) => row.remove());
@@ -878,9 +1067,15 @@
                 if (lastUser) lastUser.outerHTML = renderUserBubble(res.user_message, text);
                 els.messagesInner.insertAdjacentHTML('beforeend',
                     renderAssistantBubble(res.assistant_message, { pipelineOpen: !res.assistant_message.allow }));
+                if (res.assistant_message.requires_clarification && res.assistant_message.clarification_questions?.length) {
+                    clarifyQuestions = res.assistant_message.clarification_questions;
+                    openClarifyModal(clarifyQuestions);
+                }
                 if (res.assistant_message.output_review?.requires_user_action) {
                     openReviewModal(res.assistant_message);
                 }
+                const session = await api(`/chat/sessions/${currentSessionId}`);
+                renderUserNotice(session);
                 await loadSessions();
             } catch (err) {
                 document.getElementById('pending-assistant')?.remove();
@@ -898,7 +1093,22 @@
             ta.style.height = Math.max(INPUT_MIN_PX, Math.min(ta.scrollHeight, 240)) + 'px';
         }
 
+        els.chatNoticeAction.addEventListener('click', () => {
+            openClarifyModal(clarifyQuestions);
+        });
+        document.getElementById('close-clarify-btn').addEventListener('click', closeClarifyModal);
+        document.getElementById('cancel-clarify-btn').addEventListener('click', closeClarifyModal);
+        document.getElementById('submit-clarify-btn').addEventListener('click', submitClarification);
+        els.clarifyBackdrop.addEventListener('click', (e) => {
+            if (e.target === els.clarifyBackdrop) closeClarifyModal();
+        });
+
         els.messagesInner.addEventListener('click', (e) => {
+            const clarifyBtn = e.target.closest('.chat-open-clarify-btn');
+            if (clarifyBtn) {
+                openClarifyModal(clarifyQuestions.length ? clarifyQuestions : currentSessionMeta?.clarification_questions);
+                return;
+            }
             const reviewBtn = e.target.closest('.chat-open-review-btn');
             if (reviewBtn) {
                 const id = Number(reviewBtn.dataset.messageId);
@@ -946,7 +1156,15 @@
             if (e.target === els.settingsBackdrop) closeSettings();
         });
         document.getElementById('settings-modal').addEventListener('click', (e) => e.stopPropagation());
-        els.providerSelect.addEventListener('change', updateModelOptions);
+        els.providerSelect.addEventListener('change', () => {
+            updateModelOptions();
+            updateSettingsSummary();
+        });
+        els.modelSelect.addEventListener('change', updateSettingsSummary);
+        document.getElementById('settings-region').addEventListener('change', updateSettingsSummary);
+        document.getElementById('settings-output').addEventListener('change', updateSettingsSummary);
+        document.querySelectorAll('input[name="guardrail_mode"], input[name="completion_mode"], input[name="security_threshold_preset"]')
+            .forEach((el) => el.addEventListener('change', updateSettingsSummary));
         document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
             document.getElementById('chat-sidebar').classList.toggle('open');
         });

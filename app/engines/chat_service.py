@@ -17,11 +17,25 @@ from ..output_review import (
     evaluate_output_review,
 )
 from ..security_threshold import resolve_security_threshold
-from ..chat_storage import resolve_user_storage
-from ..models import ChatMessage, ChatSession
+from ..task_workflow import (
+    append_regen_lesson,
+    build_brief_header,
+    build_clarification_questions,
+    build_execution_plan,
+    extract_brief_from_message,
+    format_clarification_message,
+    get_workflow,
+    merge_clarification_answers,
+    save_workflow,
+    should_clarify,
+    task_brief_model,
+    total_planned_llm_calls,
+)
 from ..schemas import (
     ChatMessageResponse,
     ChatSendMessageResponse,
+    ClarificationQuestion,
+    ExecutionPlanStep,
     OutputFinding,
     OutputGuardrailResult,
     OutputTier1Result,
@@ -29,10 +43,13 @@ from ..schemas import (
     OutputReviewState,
     ChatMessageResolveRequest,
     PipelineStepState,
+    TaskBrief,
     Tier1Result,
     Tier2Result,
     FilterMatch,
 )
+from ..chat_storage import resolve_user_storage
+from ..models import ChatMessage, ChatSession
 from ..telemetry import summarize_guardrail_matches, entities_from_matches
 from .audit_vault import get_audit_vault
 from .guardrails import get_guardrail_engine
@@ -71,6 +88,37 @@ def _build_tier1_result(tier1_filter, latency_seconds: float) -> Tier1Result:
     )
 
 
+def session_workflow_envelope(session: ChatSession) -> dict:
+    workflow = get_workflow(session)
+    phase = workflow.get("phase") or "idle"
+    clar = workflow.get("clarification") or {}
+    questions = [
+        ClarificationQuestion(**q) for q in (clar.get("questions") or [])
+    ]
+    plan = build_execution_plan(
+        guardrail_mode=session.guardrail_mode,
+        output_guardrail_mode=session.output_guardrail_mode,
+        completion_mode=getattr(session, "completion_mode", "balanced") or "balanced",
+        phase=phase,
+        clarifying=phase == "clarifying",
+    )
+    return {
+        "phase": phase,
+        "task_brief": task_brief_model(workflow),
+        "execution_plan": plan,
+        "planned_llm_calls": total_planned_llm_calls(plan),
+        "clarification_questions": questions,
+    }
+
+
+def _compliance_with_brief(session: ChatSession, workflow: dict) -> str:
+    brief_header = build_brief_header(workflow)
+    region_header = build_compliance_header(session.region)
+    if brief_header:
+        return f"{brief_header}\n\n{region_header}"
+    return region_header
+
+
 def build_pipeline_steps(
     *,
     guardrail_mode: str,
@@ -83,14 +131,14 @@ def build_pipeline_steps(
 ) -> List[PipelineStepState]:
     tier2_skipped = guardrail_mode != "advanced"
     tier2_state = "skipped"
-    tier2_detail = "Skipped (basic mode)"
+    tier2_detail = "Not used (standard checking only)"
     if not tier2_skipped and tier2:
         if tier2.blocked:
             tier2_state = "blocked"
-            tier2_detail = tier2.block_reason or "Blocked"
+            tier2_detail = tier2.block_reason or "Message not allowed"
         else:
             tier2_state = "done"
-            tier2_detail = f"{len(tier2.policies_applied)} policies applied"
+            tier2_detail = "Extra review passed"
 
     model_state = "done" if model_done and allow else ("blocked" if not allow and tier2 and tier2.blocked else "blocked" if not allow else "waiting")
     if not allow:
@@ -106,29 +154,29 @@ def build_pipeline_steps(
     return [
         PipelineStepState(
             id="tier1",
-            label="Fast screening",
+            label="Checked your message",
             state="blocked" if tier1.blocked else "done",
-            detail=tier1.block_reason if tier1.blocked else "No threats detected",
+            detail=tier1.block_reason if tier1.blocked else "Looks OK",
             latency_ms=round(tier1.latency_seconds * 1000, 1),
         ),
         PipelineStepState(
             id="tier2",
-            label="Deep policy review",
+            label="Extra safety review",
             state=tier2_state,
             detail=tier2_detail,
             latency_ms=round(tier2.latency_seconds * 1000, 1) if tier2 and not tier2_skipped else None,
         ),
         PipelineStepState(
             id="model",
-            label="Model response",
+            label="Prepared the answer",
             state=model_state if allow else ("skipped" if tier1.blocked or (tier2 and tier2.blocked) else "blocked"),
-            detail="Response generated" if allow and model_done else None,
+            detail="Answer ready" if allow and model_done else None,
         ),
         PipelineStepState(
             id="output",
-            label="Output safety check",
+            label="Checked the answer",
             state=output_state,
-            detail="Assessment complete" if output_done else "Skipped",
+            detail="Review complete" if output_done else "Not needed",
         ),
     ]
 
@@ -202,6 +250,9 @@ def _message_to_response(msg: ChatMessage, ephemeral: Optional[str] = None) -> C
         preview_content = meta.get("raw_content") or msg.content
         content = None
 
+    clar_questions = [
+        ClarificationQuestion(**q) for q in (meta.get("clarification_questions") or [])
+    ]
     return ChatMessageResponse(
         id=msg.id,
         role=msg.role,
@@ -209,6 +260,8 @@ def _message_to_response(msg: ChatMessage, ephemeral: Optional[str] = None) -> C
         storage_mode=msg.storage_mode,
         allow=msg.allow,
         pipeline=pipeline,
+        requires_clarification=bool(meta.get("requires_clarification")),
+        clarification_questions=clar_questions,
         identified_entities=meta.get("identified_entities", []),
         output_guardrail=output_guardrail,
         output_review=output_review,
@@ -314,6 +367,7 @@ async def process_chat_message(
     allow = True
     assistant_text = ""
     output_skipped = session.output_guardrail_mode == "none"
+    clarification_deferred = False
 
     if tier1.blocked:
         allow = False
@@ -329,40 +383,24 @@ async def process_chat_message(
         )
         await _audit("chat_blocked_tier1", {"reason": tier1.block_reason})
     else:
-        if session.guardrail_mode == "advanced":
-            tier2_start = time.perf_counter()
-            tier2_filter = await guardrail_engine.filter(
-                text=tier1.filtered_text,
-                direction="prompt",
-                tier="2",
-                region=internal_region,
-            )
-            tier2_latency = time.perf_counter() - tier2_start
-            policy_names = get_policies_for_region(session.region)
-            tier2 = Tier2Result(
-                blocked=tier2_filter.blocked,
-                block_reason=getattr(tier2_filter, "block_reason", None),
-                policies_applied=policy_names,
-                region=session.region,
-                latency_seconds=round(tier2_latency, 4),
-            )
-            if tier2.blocked:
-                allow = False
-                assistant_text = f"Request blocked by policy review: {tier2.block_reason}"
-                pipeline = build_pipeline_steps(
-                    guardrail_mode=session.guardrail_mode,
-                    tier1=tier1,
-                    tier2=tier2,
-                    allow=False,
-                    model_done=False,
-                    output_done=False,
-                    output_skipped=True,
-                )
-                await _audit("chat_blocked_tier2", {"reason": tier2.block_reason})
-            else:
-                pass
-        else:
-            policy_names = get_policies_for_region(session.region)
+        workflow = get_workflow(session)
+        completion_mode = getattr(session, "completion_mode", "balanced") or "balanced"
+        policy_names = get_policies_for_region(session.region)
+
+        if should_clarify(user_text, completion_mode, workflow):
+            questions = build_clarification_questions(user_text)
+            workflow["phase"] = "clarifying"
+            workflow["pending_user_prompt"] = tier1.filtered_text or user_text
+            if not (workflow.get("task_brief") or {}).get("goal"):
+                workflow["task_brief"] = extract_brief_from_message(user_text)
+            workflow["clarification"] = {
+                "round": int((workflow.get("clarification") or {}).get("round", 0)),
+                "questions": [q.model_dump() for q in questions],
+                "answers": {},
+            }
+            save_workflow(session, workflow)
+            clarification_deferred = True
+            assistant_text = format_clarification_message(questions)
             tier2 = Tier2Result(
                 blocked=False,
                 block_reason=None,
@@ -370,55 +408,144 @@ async def process_chat_message(
                 region=session.region,
                 latency_seconds=0.0,
             )
-
-        if allow:
-            await refresh_gemini_catalog()
-            await refresh_mistral_catalog()
-            inference = get_inference_router()
-            history = _history_for_inference(prior_messages)
-            if stored_content:
-                history.append({"role": "user", "content": stored_content})
-            compliance_header = build_compliance_header(session.region)
-            try:
-                assistant_text = await inference.generate_messages(
-                    session.inference_provider,
-                    session.model,
-                    history,
-                    compliance_header=compliance_header,
-                )
-            except Exception as exc:
-                allow = False
-                assistant_text = f"Model failed to respond: {exc}"
-
-            if allow and session.output_guardrail_mode != "none":
-                output_guardrail_result = await _assess_model_output(
-                    guardrail_engine, user_text, assistant_text, session
-                )
-
-            pipeline = build_pipeline_steps(
-                guardrail_mode=session.guardrail_mode,
-                tier1=tier1,
-                tier2=tier2,
-                allow=allow,
-                model_done=allow,
-                output_done=allow and not output_skipped,
-                output_skipped=output_skipped,
+            pipeline = [
+                PipelineStepState(
+                    id="tier1",
+                    label="Checked your message",
+                    state="done",
+                    detail="Looks OK",
+                    latency_ms=round(tier1.latency_seconds * 1000, 1),
+                ),
+                PipelineStepState(
+                    id="clarify",
+                    label="Asked a few questions",
+                    state="done",
+                    detail="Waiting for your answers",
+                ),
+                PipelineStepState(
+                    id="tier2",
+                    label="Extra safety review",
+                    state="skipped",
+                    detail="Continues after you answer",
+                ),
+                PipelineStepState(
+                    id="model",
+                    label="Prepared the answer",
+                    state="skipped",
+                    detail="Waiting for your answers",
+                ),
+                PipelineStepState(
+                    id="output",
+                    label="Checked the answer",
+                    state="skipped",
+                    detail="After the answer is ready",
+                ),
+            ]
+            await _audit(
+                "chat_clarification_requested",
+                {"question_count": len(questions), "completion_mode": completion_mode},
             )
-            if allow:
-                await _audit(
-                    "chat_message_success",
-                    {
-                        "guardrail_mode": session.guardrail_mode,
-                        "inference_provider": session.inference_provider,
-                        "model": session.model,
-                        "latency_s": round(time.perf_counter() - start_time, 4),
-                    },
+        else:
+            brief = workflow.get("task_brief") or {}
+            if not brief.get("goal"):
+                workflow["task_brief"] = extract_brief_from_message(user_text)
+            workflow["phase"] = "ready"
+            save_workflow(session, workflow)
+
+            if session.guardrail_mode == "advanced":
+                tier2_start = time.perf_counter()
+                tier2_filter = await guardrail_engine.filter(
+                    text=tier1.filtered_text,
+                    direction="prompt",
+                    tier="2",
+                    region=internal_region,
                 )
+                tier2_latency = time.perf_counter() - tier2_start
+                tier2 = Tier2Result(
+                    blocked=tier2_filter.blocked,
+                    block_reason=getattr(tier2_filter, "block_reason", None),
+                    policies_applied=policy_names,
+                    region=session.region,
+                    latency_seconds=round(tier2_latency, 4),
+                )
+                if tier2.blocked:
+                    allow = False
+                    assistant_text = f"Request blocked by policy review: {tier2.block_reason}"
+                    pipeline = build_pipeline_steps(
+                        guardrail_mode=session.guardrail_mode,
+                        tier1=tier1,
+                        tier2=tier2,
+                        allow=False,
+                        model_done=False,
+                        output_done=False,
+                        output_skipped=True,
+                    )
+                    await _audit("chat_blocked_tier2", {"reason": tier2.block_reason})
+            else:
+                tier2 = Tier2Result(
+                    blocked=False,
+                    block_reason=None,
+                    policies_applied=policy_names,
+                    region=session.region,
+                    latency_seconds=0.0,
+                )
+
+            if allow:
+                await refresh_gemini_catalog()
+                await refresh_mistral_catalog()
+                inference = get_inference_router()
+                history = _history_for_inference(prior_messages)
+                if stored_content:
+                    history.append({"role": "user", "content": stored_content})
+                compliance_header = _compliance_with_brief(session, workflow)
+                try:
+                    assistant_text = await inference.generate_messages(
+                        session.inference_provider,
+                        session.model,
+                        history,
+                        compliance_header=compliance_header,
+                    )
+                except Exception as exc:
+                    allow = False
+                    assistant_text = f"Model failed to respond: {exc}"
+
+                if allow and session.output_guardrail_mode != "none":
+                    output_guardrail_result = await _assess_model_output(
+                        guardrail_engine, user_text, assistant_text, session
+                    )
+
+                pipeline = build_pipeline_steps(
+                    guardrail_mode=session.guardrail_mode,
+                    tier1=tier1,
+                    tier2=tier2,
+                    allow=allow,
+                    model_done=allow,
+                    output_done=allow and not output_skipped,
+                    output_skipped=output_skipped,
+                )
+                workflow["phase"] = "executing"
+                save_workflow(session, workflow)
+                if allow:
+                    await _audit(
+                        "chat_message_success",
+                        {
+                            "guardrail_mode": session.guardrail_mode,
+                            "inference_provider": session.inference_provider,
+                            "model": session.model,
+                            "latency_s": round(time.perf_counter() - start_time, 4),
+                        },
+                    )
+
+    workflow = get_workflow(session)
 
     assistant_meta: Dict = {
         "identified_entities": tier1.identified_entities if not allow else [],
         "total_latency_s": round(time.perf_counter() - start_time, 4),
     }
+    if clarification_deferred:
+        clar = workflow.get("clarification") or {}
+        assistant_meta["requires_clarification"] = True
+        assistant_meta["clarification_questions"] = clar.get("questions") or []
     if output_guardrail_result is not None:
         assistant_meta["output_guardrail"] = output_guardrail_result.model_dump()
 
@@ -470,11 +597,191 @@ async def process_chat_message(
             },
         )
 
+    envelope = session_workflow_envelope(session)
     return ChatSendMessageResponse(
         session_id=session.id,
         user_message=_message_to_response(user_msg, ephemeral=ephemeral_user),
         assistant_message=_message_to_response(assistant_msg),
+        phase=envelope["phase"],
+        execution_plan=envelope["execution_plan"],
+        planned_llm_calls=envelope["planned_llm_calls"],
+        task_brief=envelope["task_brief"],
     )
+
+
+async def continue_after_clarification(
+    db: AsyncSession,
+    session: ChatSession,
+    answers: Dict[str, str],
+    username: str,
+) -> ChatSendMessageResponse:
+    """Merge clarification answers and run tier2 → model → output review."""
+    start_time = time.perf_counter()
+    workflow = get_workflow(session)
+    pending = workflow.get("pending_user_prompt")
+    if workflow.get("phase") != "clarifying" or not pending:
+        raise ValueError("This chat is not waiting for clarification answers")
+
+    workflow = merge_clarification_answers(workflow, answers, pending)
+    save_workflow(session, workflow)
+
+    guardrail_engine = get_guardrail_engine()
+    audit = get_audit_vault()
+    internal_region = REGION_MAP.get(session.region, "GLOBAL")
+    prior_messages = await list_session_messages(db, session.id)
+    user_text = pending
+
+    tier2: Optional[Tier2Result] = None
+    output_guardrail_result: Optional[OutputGuardrailResult] = None
+    allow = True
+    assistant_text = ""
+    output_skipped = session.output_guardrail_mode == "none"
+    policy_names = get_policies_for_region(session.region)
+
+    tier1 = Tier1Result(
+        blocked=False,
+        block_reason=None,
+        matches=[],
+        identified_entities=[],
+        filtered_text=pending,
+        latency_seconds=0.0,
+    )
+
+    if session.guardrail_mode == "advanced":
+        tier2_start = time.perf_counter()
+        tier2_filter = await guardrail_engine.filter(
+            text=pending,
+            direction="prompt",
+            tier="2",
+            region=internal_region,
+        )
+        tier2_latency = time.perf_counter() - tier2_start
+        tier2 = Tier2Result(
+            blocked=tier2_filter.blocked,
+            block_reason=getattr(tier2_filter, "block_reason", None),
+            policies_applied=policy_names,
+            region=session.region,
+            latency_seconds=round(tier2_latency, 4),
+        )
+        if tier2.blocked:
+            allow = False
+            assistant_text = f"Request blocked by policy review: {tier2.block_reason}"
+    else:
+        tier2 = Tier2Result(
+            blocked=False,
+            block_reason=None,
+            policies_applied=policy_names,
+            region=session.region,
+            latency_seconds=0.0,
+        )
+
+    if allow:
+        await refresh_gemini_catalog()
+        await refresh_mistral_catalog()
+        inference = get_inference_router()
+        history = _history_for_inference(prior_messages)
+        compliance_header = _compliance_with_brief(session, workflow)
+        try:
+            assistant_text = await inference.generate_messages(
+                session.inference_provider,
+                session.model,
+                history,
+                compliance_header=compliance_header,
+            )
+        except Exception as exc:
+            allow = False
+            assistant_text = f"Model failed to respond: {exc}"
+
+        if allow and session.output_guardrail_mode != "none":
+            output_guardrail_result = await _assess_model_output(
+                guardrail_engine, user_text, assistant_text, session
+            )
+
+    pipeline = build_pipeline_steps(
+        guardrail_mode=session.guardrail_mode,
+        tier1=tier1,
+        tier2=tier2,
+        allow=allow,
+        model_done=allow,
+        output_done=allow and not output_skipped,
+        output_skipped=output_skipped,
+    )
+    workflow["phase"] = "executing" if allow else workflow.get("phase", "ready")
+    save_workflow(session, workflow)
+
+    assistant_meta: Dict = {
+        "total_latency_s": round(time.perf_counter() - start_time, 4),
+    }
+    if output_guardrail_result is not None:
+        assistant_meta["output_guardrail"] = output_guardrail_result.model_dump()
+    if allow and output_guardrail_result is not None:
+        threshold = resolve_security_threshold(session.security_threshold_preset)
+        review_state, _ = evaluate_output_review(
+            assistant_text,
+            output_guardrail_result,
+            threshold,
+            session.region,
+            regenerations_used=0,
+        )
+        assistant_meta["output_review"] = review_state.model_dump()
+        assistant_meta["raw_content"] = assistant_text
+        assistant_meta["regenerations_used"] = 0
+        assistant_meta["review_status"] = review_state.status
+        assistant_meta["source_user_prompt"] = user_text
+    elif allow:
+        assistant_meta["review_status"] = "delivered"
+
+    assistant_msg = ChatMessage(
+        session_id=session.id,
+        role="assistant",
+        content=assistant_text,
+        storage_mode="full",
+        allow=allow,
+        pipeline=[s.model_dump() for s in pipeline],
+        meta=assistant_meta,
+    )
+    db.add(assistant_msg)
+    session.updated_at = datetime.utcnow()
+    await db.flush()
+
+    await audit.log(
+        db=db,
+        event_type="chat_clarification_completed",
+        actor=username,
+        system_name="aegis-chat",
+        details={"session_id": session.id, "message_id": assistant_msg.id},
+    )
+
+    envelope = session_workflow_envelope(session)
+    last_user = prior_messages[-1] if prior_messages else None
+    user_resp = _message_to_response(last_user) if last_user and last_user.role == "user" else ChatMessageResponse(
+        id=0,
+        role="user",
+        content=None,
+        created_at=datetime.utcnow(),
+    )
+    return ChatSendMessageResponse(
+        session_id=session.id,
+        user_message=user_resp,
+        assistant_message=_message_to_response(assistant_msg),
+        phase=envelope["phase"],
+        execution_plan=envelope["execution_plan"],
+        planned_llm_calls=envelope["planned_llm_calls"],
+        task_brief=envelope["task_brief"],
+    )
+
+
+async def update_session_brief(session: ChatSession, body) -> TaskBrief:
+    workflow = get_workflow(session)
+    brief = dict(workflow.get("task_brief") or {})
+    data = body.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        if value is not None:
+            brief[key] = value
+    workflow["task_brief"] = brief
+    workflow["phase"] = "ready"
+    save_workflow(session, workflow)
+    return task_brief_model(workflow)
 
 
 async def get_message_for_user(
@@ -608,6 +915,17 @@ async def resolve_chat_message(
             collect_recommendations(og),
         )
 
+        workflow = get_workflow(session)
+        if code_findings:
+            top = max(code_findings, key=lambda f: f.confidence)
+            append_regen_lesson(
+                workflow,
+                issue=top.description or top.label or "insecure code",
+                fix="; ".join(collect_recommendations(og)[:3]) or instruction[:200],
+                attempt=regen_used + 1,
+            )
+            save_workflow(session, workflow)
+
         prior = await list_session_messages(db, session.id)
         prior = [m for m in prior if m.id < msg.id]
         history = _history_for_inference(prior)
@@ -617,7 +935,7 @@ async def resolve_chat_message(
         await refresh_gemini_catalog()
         await refresh_mistral_catalog()
         inference = get_inference_router()
-        compliance_header = build_compliance_header(session.region)
+        compliance_header = _compliance_with_brief(session, get_workflow(session))
         new_text = await inference.generate_messages(
             session.inference_provider,
             session.model,

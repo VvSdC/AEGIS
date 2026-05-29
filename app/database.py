@@ -89,6 +89,20 @@ async def _apply_sqlite_migrations(conn):
                     "ADD COLUMN security_threshold_preset VARCHAR(20) DEFAULT 'balanced'"
                 )
             )
+        if "completion_mode" not in columns:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE chat_sessions "
+                    "ADD COLUMN completion_mode VARCHAR(20) DEFAULT 'balanced'"
+                )
+            )
+        if "workflow_meta" not in columns:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE chat_sessions "
+                    "ADD COLUMN workflow_meta TEXT DEFAULT '{}'"
+                )
+            )
 
     await conn.run_sync(migrate)
 

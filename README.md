@@ -58,7 +58,7 @@ CLIENT REQUEST
      ▼
 ┌─────────────────────────────────────────────────────────┐
 │  TIER 2: LLM-Based Analysis  (200ms–2s)                 │
-│  Checks: Subtle toxicity, Novel jailbreaks, Bias,      │
+│  Checks: Novel jailbreaks, Bias,                       │
 │           Privacy violations, Hallucination risk,      │
 │           Regulatory compliance (GDPR, EU AI Act)      │
 └─────────────────────────────────────────────────────────┘
@@ -176,15 +176,11 @@ Detects: DAN/STAN personas, instruction overrides, role confusion, mode switchin
 Detects: Fake XML/markdown tags, LLM special tokens, delimiter injection, system prompt extraction, encoding obfuscation.
 - **Confidence**: 0.8 to 1.0 (special tokens)
 
-### 4. **Toxicity Blocklist**
-Keyword-level filter for obvious toxic terms.
-- **Confidence**: 1.0 (exact keyword match)
-
-### 5. **YARA Rules** (Optional)
+### 4. **YARA Rules** (Optional)
 Multi-condition pattern matching for sophisticated attacks. Graceful fallback if `yara-python` not installed.
 - **Confidence**: 0.95
 
-### 6. **Insecure Code (SAST)** (160 patterns)
+### 5. **Insecure Code (SAST)** (160 patterns)
 | Category | Examples | Severity |
 |----------|----------|----------|
 | **INJECTION** | SQL, Command, LDAP, XPath, Template, NoSQL | Critical (0.95) |
@@ -197,34 +193,18 @@ Multi-condition pattern matching for sophisticated attacks. Graceful fallback if
 
 ---
 
-## 🧠 Tier 2: LLM-Based Deep Analysis
+## 🧠 Tier 2: Llama Guard 3 (Hugging Face)
 
-Only runs if Tier 1 does NOT block. Uses configured inference providers to analyze for subtle issues:
+Runs on **Advanced** input mode when Tier 1 PII does not block. Uses **Llama Guard 3** via `HUGGINGFACE_API_KEY` (not your main chat model), so semantic safety is cheaper and multilingual-friendly.
 
-| Category | Detection | Example |
-|----------|-----------|---------|
-| **Subtle Toxicity** | Hate speech, coded language, microaggressions | Context-dependent |
-| **Novel Jailbreaks** | Multi-turn manipulation, unseen variants | Zero-day attacks |
-| **Demographic Bias** | Unfair treatment, stereotypes, exclusion | Requires semantic understanding |
-| **Privacy Violations** | Indirect PII extraction, inference attacks | Indirect leaks |
-| **Hallucination Risk** | Factual inaccuracies, invented citations | World knowledge |
-| **Prompt Injection** | Sophisticated multi-step bypasses | Obfuscated beyond regex |
-| **Regulatory Compliance** | GDPR, EU AI Act, sector rules | Legal reasoning |
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `LLAMA_GUARD_MODEL` | `meta-llama/Llama-Guard-3-1B` | HF model id (gated — accept license on Hugging Face) |
+| `TIER1_JAILBREAK_INJECTION_PATTERNS` | `false` | Legacy English regex patterns (optional) |
 
-```json
-{
-  "findings": [
-    {
-      "category": "toxicity",
-      "severity": "high",
-      "description": "Potential coded hate speech detected",
-      "confidence": 0.87
-    }
-  ],
-  "should_block": true,
-  "block_reason": "High-confidence toxicity with regulatory implications"
-}
-```
+**Output:** `safe` or `unsafe` plus optional category codes (S1–S14). Unsafe prompts are blocked before the main model runs.
+
+**Output Tier 2 (Strict)** remains a separate compliance pass using your chat provider (Gemini/Mistral/etc.) for regional policy review.
 
 ---
 

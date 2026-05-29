@@ -613,6 +613,30 @@ class AnalyzeResponse(BaseModel):
 # Chat Schemas
 # =============================================================================
 
+class TaskBrief(BaseModel):
+    goal: str = ""
+    constraints: List[str] = Field(default_factory=list)
+    must_not: List[str] = Field(default_factory=list)
+    acceptance: str = ""
+    stack: str = ""
+    lessons: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ClarificationQuestion(BaseModel):
+    id: str
+    text: str
+    choices: List[str] = Field(default_factory=list)
+
+
+class ExecutionPlanStep(BaseModel):
+    id: str
+    label: str
+    kind: Literal["local", "llm"] = "local"
+    state: Literal["planned", "active", "done", "skipped", "blocked", "waiting"] = "planned"
+    detail: Optional[str] = None
+    llm_calls: int = 0
+
+
 class ChatSessionSettings(BaseModel):
     region: Literal["india", "china", "europe", "usa", "australia"] = "india"
     guardrail_mode: Literal["basic", "advanced"] = "basic"
@@ -620,6 +644,10 @@ class ChatSessionSettings(BaseModel):
     security_threshold_preset: Literal["strict", "balanced", "quiet"] = Field(
         default="balanced",
         description="When insecure code is found in model output, prompt regen if confidence >= this preset's value",
+    )
+    completion_mode: Literal["fast", "balanced", "clarify_first"] = Field(
+        default="balanced",
+        description="Fast: generate immediately. Balanced: clarify when vague. Clarify-first: questions before first generation.",
     )
     inference_provider: Literal["gemini", "openrouter", "huggingface", "mistral"] = "gemini"
     model: str = "gemini-2.0-flash"
@@ -641,11 +669,36 @@ class ChatSessionResponse(BaseModel):
     output_guardrail_mode: str
     security_threshold_preset: str = "balanced"
     security_threshold: float = 0.90
+    completion_mode: str = "balanced"
+    phase: str = "idle"
+    task_brief: TaskBrief = Field(default_factory=TaskBrief)
+    execution_plan: List[ExecutionPlanStep] = Field(default_factory=list)
+    planned_llm_calls: int = 0
+    clarification_questions: List[ClarificationQuestion] = Field(default_factory=list)
     inference_provider: str
     model: str
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
+
+
+class ChatTaskBriefUpdate(BaseModel):
+    goal: Optional[str] = None
+    constraints: Optional[List[str]] = None
+    must_not: Optional[List[str]] = None
+    acceptance: Optional[str] = None
+    stack: Optional[str] = None
+
+
+class ChatClarifyRequest(BaseModel):
+    answers: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of question id → answer text",
+    )
+    continue_generation: bool = Field(
+        default=True,
+        description="After merging answers, run the pending governed generation",
+    )
 
 
 class PipelineStepState(BaseModel):
@@ -663,6 +716,8 @@ class ChatMessageResponse(BaseModel):
     storage_mode: Literal["full", "redacted", "withheld"] = "full"
     allow: Optional[bool] = None
     pipeline: List[PipelineStepState] = []
+    requires_clarification: bool = False
+    clarification_questions: List[ClarificationQuestion] = Field(default_factory=list)
     identified_entities: List[str] = []
     output_guardrail: Optional[OutputGuardrailResult] = None
     output_review: Optional[OutputReviewState] = None
@@ -693,3 +748,7 @@ class ChatSendMessageResponse(BaseModel):
     user_message: ChatMessageResponse
     assistant_message: ChatMessageResponse
     session_id: int
+    phase: str = "idle"
+    execution_plan: List[ExecutionPlanStep] = Field(default_factory=list)
+    planned_llm_calls: int = 0
+    task_brief: TaskBrief = Field(default_factory=TaskBrief)

@@ -29,7 +29,7 @@ async def filter_text(
     - Toxicity blocklist
     
     **Tier 2** (async): LLM-based deep classification for:
-    - Subtle toxicity
+    - Jailbreak and policy issues (when tier 2 enabled)
     - Novel jailbreak variants
     - Bias detection
     

@@ -176,6 +176,7 @@ async def serve_deploy_code():
         "app/engines/__init__.py",
         "app/engines/inference_providers.py",
         "app/engines/guardrails.py",
+        "app/engines/llama_guard.py",
         "app/engines/risk_scorer.py",
         "app/engines/policy_engine.py",
         "app/engines/audit_vault.py",
