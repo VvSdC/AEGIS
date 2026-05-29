@@ -88,87 +88,110 @@
     </div>
 
     <div class="chat-modal-backdrop" id="settings-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-        <div class="chat-modal" id="settings-modal">
+        <div class="chat-modal chat-modal-settings" id="settings-modal">
             <div class="chat-modal-header">
                 <div>
                     <h2 id="settings-modal-title">Chat settings</h2>
-                    <p>These apply to the current conversation only. Change them anytime before your next message.</p>
+                    <p>Applied to this conversation only. Adjust before your next message.</p>
                 </div>
                 <button type="button" class="chat-modal-close" id="close-settings-btn" aria-label="Close">×</button>
             </div>
-            <div class="chat-modal-body">
-                <div class="chat-field">
-                    <label for="settings-region">Region</label>
-                    <p class="field-hint">Which compliance rules apply to this chat.</p>
-                    <select id="settings-region">
-                        <option value="india">India</option>
-                        <option value="china">China</option>
-                        <option value="europe">Europe</option>
-                        <option value="usa">USA</option>
-                        <option value="australia">Australia</option>
-                    </select>
-                </div>
+            <div class="chat-modal-body chat-settings-grid">
+                <section class="chat-settings-col" aria-labelledby="settings-col-governance">
+                    <h3 class="chat-settings-section-title" id="settings-col-governance">Compliance &amp; screening</h3>
 
-                <div class="chat-field">
-                    <label>Input screening</label>
-                    <p class="field-hint">How thoroughly incoming messages are checked.</p>
-                    <div class="chat-radio-grid">
-                        <label class="chat-radio-card"><input type="radio" name="guardrail_mode" value="basic" checked> Basic<br><span class="text-slate-500 text-xs">Fast scan</span></label>
-                        <label class="chat-radio-card"><input type="radio" name="guardrail_mode" value="advanced"> Advanced<br><span class="text-slate-500 text-xs">+ policy review</span></label>
+                    <div class="chat-field">
+                        <label for="settings-region">Region</label>
+                        <p class="field-hint">Compliance rules for prompts and responses.</p>
+                        <select id="settings-region">
+                            <option value="india">India</option>
+                            <option value="china">China</option>
+                            <option value="europe">Europe</option>
+                            <option value="usa">USA</option>
+                            <option value="australia">Australia</option>
+                        </select>
                     </div>
-                </div>
 
-                <div class="chat-field">
-                    <label for="settings-output">Output screening</label>
-                    <p class="field-hint">Checks on the model’s reply before you see it.</p>
-                    <select id="settings-output">
-                        <option value="tier1">Standard — flag issues</option>
-                        <option value="tier2">Strict — compliance review</option>
-                        <option value="none">Off — not recommended</option>
-                    </select>
-                </div>
-
-                <div class="chat-field">
-                    <label>Code security threshold</label>
-                    <p class="field-hint">How confident AEGIS must be before it asks you to regenerate code with security fixes. Higher = fewer prompts, but riskier code may slip through.</p>
-                    <div class="chat-radio-grid chat-threshold-grid">
-                        <label class="chat-radio-card">
-                            <input type="radio" name="security_threshold_preset" value="strict">
-                            Strict · 0.95<br><span class="text-slate-500 text-xs">Production code</span>
-                        </label>
-                        <label class="chat-radio-card">
-                            <input type="radio" name="security_threshold_preset" value="balanced" checked>
-                            Balanced · 0.90<br><span class="text-slate-500 text-xs">Default</span>
-                        </label>
-                        <label class="chat-radio-card">
-                            <input type="radio" name="security_threshold_preset" value="quiet">
-                            Quiet · 0.85<br><span class="text-slate-500 text-xs">POCs & drafts</span>
-                        </label>
+                    <div class="chat-field">
+                        <label>Input screening</label>
+                        <p class="field-hint">Checks on messages you send.</p>
+                        <div class="chat-radio-grid chat-radio-inline">
+                            <label class="chat-radio-card"><input type="radio" name="guardrail_mode" value="basic" checked> Basic<br><span class="text-slate-500 text-xs">Fast scan</span></label>
+                            <label class="chat-radio-card"><input type="radio" name="guardrail_mode" value="advanced"> Advanced<br><span class="text-slate-500 text-xs">+ policy review</span></label>
+                        </div>
                     </div>
+
+                    <div class="chat-field">
+                        <label for="settings-output">Output screening</label>
+                        <p class="field-hint">Checks on the model reply before delivery.</p>
+                        <select id="settings-output">
+                            <option value="tier1">Standard — flag issues</option>
+                            <option value="tier2">Strict — compliance review</option>
+                            <option value="none">Off — not recommended</option>
+                        </select>
+                    </div>
+                </section>
+
+                <section class="chat-settings-col" aria-labelledby="settings-col-model">
+                    <h3 class="chat-settings-section-title" id="settings-col-model">Model &amp; code review</h3>
+
+                    <div class="chat-field">
+                        <label for="settings-provider">AI provider</label>
+                        <p class="field-hint">Shown beside the message box.</p>
+                        <select id="settings-provider"></select>
+                    </div>
+
+                    <div class="chat-field">
+                        <label for="settings-model">Model</label>
+                        <p class="field-hint">Version used for replies in this chat.</p>
+                        <select id="settings-model"></select>
+                    </div>
+
+                    <div class="chat-field">
+                        <label>Code security threshold</label>
+                        <p class="field-hint">Higher = fewer regen prompts; lower = more interruptions for possible vulnerabilities.</p>
+                        <div class="chat-radio-grid chat-threshold-stack">
+                            <label class="chat-radio-card">
+                                <input type="radio" name="security_threshold_preset" value="strict">
+                                <span class="chat-radio-card-title">Strict · 0.95</span>
+                                <span class="chat-radio-card-sub">Production &amp; customer-facing code</span>
+                            </label>
+                            <label class="chat-radio-card">
+                                <input type="radio" name="security_threshold_preset" value="balanced" checked>
+                                <span class="chat-radio-card-title">Balanced · 0.90</span>
+                                <span class="chat-radio-card-sub">Recommended default</span>
+                            </label>
+                            <label class="chat-radio-card">
+                                <input type="radio" name="security_threshold_preset" value="quiet">
+                                <span class="chat-radio-card-title">Quiet · 0.85</span>
+                                <span class="chat-radio-card-sub">POCs, demos &amp; drafts</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="chat-settings-span" aria-labelledby="settings-threshold-guide-title">
                     <div class="chat-threshold-guide">
-                        <p class="chat-threshold-guide-title">When to use each level</p>
-                        <ul>
-                            <li><strong>Strict (0.95)</strong> — Production services, auth, payments, user data, anything shipped to customers. We only interrupt when we’re highly confident there’s a real vulnerability.</li>
-                            <li><strong>Balanced (0.90)</strong> — Everyday internal tools, scripts, and learning. Good default for most chats.</li>
-                            <li><strong>Quiet (0.85)</strong> — POCs, spikes, demos, and brainstorming. Fewer regen prompts; review code yourself before reuse.</li>
-                        </ul>
-                        <p class="chat-threshold-guide-note">Critical issues may still be flagged separately. PII in output always uses its own review flow (redact by default).</p>
+                        <p class="chat-threshold-guide-title" id="settings-threshold-guide-title">When to use each threshold</p>
+                        <div class="chat-threshold-guide-grid">
+                            <div class="chat-threshold-guide-item">
+                                <strong>Strict</strong>
+                                <p>Production services, auth, payments, and anything shipped to users. We only ask you to regenerate when we’re highly confident there’s a real issue.</p>
+                            </div>
+                            <div class="chat-threshold-guide-item">
+                                <strong>Balanced</strong>
+                                <p>Internal tools, scripts, and everyday learning. A good default for most chats.</p>
+                            </div>
+                            <div class="chat-threshold-guide-item">
+                                <strong>Quiet</strong>
+                                <p>Spikes and brainstorming. Fewer prompts; review generated code yourself before reuse.</p>
+                            </div>
+                        </div>
+                        <p class="chat-threshold-guide-note">Critical code issues may still be flagged separately. PII in output always uses its own review step (redact by default).</p>
                     </div>
-                </div>
-
-                <div class="chat-field">
-                    <label for="settings-provider">AI provider</label>
-                    <p class="field-hint">Who runs the model (shown below the message box).</p>
-                    <select id="settings-provider"></select>
-                </div>
-
-                <div class="chat-field">
-                    <label for="settings-model">Model</label>
-                    <p class="field-hint">Specific model version for replies.</p>
-                    <select id="settings-model"></select>
-                </div>
+                </section>
             </div>
-            <div class="chat-modal-footer">
+            <div class="chat-modal-footer chat-settings-footer">
                 <button type="button" id="cancel-settings-btn" class="btn-secondary text-sm">Cancel</button>
                 <button type="button" id="save-settings-btn" class="btn-primary text-sm">Save changes</button>
             </div>
