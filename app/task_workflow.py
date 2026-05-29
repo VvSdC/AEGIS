@@ -39,6 +39,62 @@ VAGUE_PHRASES = re.compile(
     r"\b(help me with this|make it better|fix this|do something|not sure|something like)\b",
     re.I,
 )
+QUESTION_PATTERNS = re.compile(
+    r"\b("
+    r"sum|total|count|calculate|compute|how many|what is|what's|whats|explain|why|when|where|which|"
+    r"define|difference between|digits in|length of|convert|solve|evaluate"
+    r")\b|^\s*(can you|could you|please)\b",
+    re.I,
+)
+# Short prompts about a single unclear name (Strix, Apollo, etc.) — need disambiguation.
+_AMBIGUOUS_SUBJECT_PATTERNS = (
+    re.compile(
+        r"(?i)^(?:please\s+)?(?:can you\s+|could you\s+)?"
+        r"(?:explain|describe|tell me about)\s+(?:how\s+)?"
+        r"(?:(?:the|a|an)\s+)?([A-Za-z][\w.-]{1,32})(?:\s+works?)?\s*\??\s*$"
+    ),
+    re.compile(
+        r"(?i)^(?:how\s+(?:does|do)\s+)([A-Za-z][\w.-]{1,32})\s+work\s*\??\s*$"
+    ),
+    re.compile(
+        r"(?i)^(?:what is|what's|whats|define)\s+(?:(?:the|a|an)\s+)?"
+        r"([A-Za-z][\w.-]{1,32})\s*\??\s*$"
+    ),
+)
+# Well-known single-topic words where one meaning is obvious without extra context.
+_CLEAR_SINGLE_TOPICS = frozenset(
+    {
+        "gravity",
+        "photosynthesis",
+        "mitosis",
+        "python",
+        "javascript",
+        "typescript",
+        "react",
+        "fastapi",
+        "django",
+        "kubernetes",
+        "docker",
+        "blockchain",
+        "encryption",
+        "jwt",
+        "oauth",
+        "sql",
+        "html",
+        "css",
+        "http",
+        "https",
+        "tcp",
+        "udp",
+        "dns",
+        "git",
+        "machine",
+        "learning",
+        "neural",
+        "networks",
+    }
+)
+
 CODE_HINTS = re.compile(
     r"\b(api|endpoint|auth|jwt|database|sql|react|python|function|class|script|deploy|docker)\b",
     re.I,
@@ -264,11 +320,43 @@ def total_planned_llm_calls(steps: List[ExecutionPlanStep]) -> int:
     return sum(s.llm_calls for s in steps if s.state in countable and s.llm_calls > 0)
 
 
+def extract_ambiguous_subject(text: str) -> Optional[str]:
+    """If the message is a short 'explain X' / 'how does X work' with no context, return X."""
+    t = (text or "").strip()
+    if len(t) > 140:
+        return None
+    for pat in _AMBIGUOUS_SUBJECT_PATTERNS:
+        m = pat.match(t)
+        if not m:
+            continue
+        subject = m.group(1).strip()
+        if not subject or " " in subject:
+            return None
+        low = subject.lower()
+        if low in _CLEAR_SINGLE_TOPICS:
+            return None
+        if re.search(
+            r"\b(amd|asus|rog|intel|nvidia|in|for|on|using|with|from|project|app|api|module|library|framework)\b",
+            t,
+            re.I,
+        ) and len(t) > 40:
+            return None
+        return subject
+    return None
+
+
+def references_ambiguous_term(text: str) -> bool:
+    """True when a single proper noun / product name needs disambiguation."""
+    return extract_ambiguous_subject(text) is not None
+
+
 def intent_confidence(text: str) -> float:
     """Rule-based 0–1 score; higher = ready to generate without clarifying."""
     t = (text or "").strip()
     if not t:
         return 0.0
+    if references_ambiguous_term(t):
+        return 0.25
     score = 0.45
     if len(t) >= 80:
         score += 0.2
@@ -276,6 +364,10 @@ def intent_confidence(text: str) -> float:
         score += 0.1
     if GOAL_VERBS.search(t):
         score += 0.2
+    if QUESTION_PATTERNS.search(t):
+        score += 0.28
+    if t.rstrip().endswith("?"):
+        score += 0.12
     if "```" in t:
         score += 0.15
     if VAGUE_PHRASES.search(t):
@@ -294,6 +386,8 @@ def should_clarify(
 ) -> bool:
     if completion_mode == "fast":
         return False
+    if references_ambiguous_term(text):
+        return True
     clarification = workflow.get("clarification") or {}
     if int(clarification.get("round", 0)) >= 1:
         return False
@@ -310,6 +404,25 @@ def should_clarify(
 
 def build_clarification_questions(text: str) -> List[ClarificationQuestion]:
     """2–4 targeted questions (no LLM)."""
+    subject = extract_ambiguous_subject(text)
+    if subject:
+        return [
+            ClarificationQuestion(
+                id="which_subject",
+                text=f'“{subject}” can refer to different products or topics. Which one do you mean?',
+                choices=[
+                    "Hardware / device (CPU, GPU, laptop, etc.)",
+                    "Software / tool / API / framework",
+                    "Company / brand / product line",
+                    "Something else (I’ll describe in my answer)",
+                ],
+            ),
+            ClarificationQuestion(
+                id="detail",
+                text="Anything else we should know? (model name, link, or what you’re trying to do)",
+            ),
+        ]
+
     questions: List[ClarificationQuestion] = []
     t = text.lower()
 
@@ -396,6 +509,18 @@ def merge_clarification_answers(
     if not brief.get("goal"):
         brief = extract_brief_from_message(original_prompt)
 
+    which_subject = answers.get("which_subject", "").strip()
+    if which_subject:
+        brief["goal"] = (
+            f"{brief.get('goal', '').strip()} — Meaning: {which_subject}".strip(" —")
+        )
+
+    detail = answers.get("detail", "").strip()
+    if detail:
+        brief.setdefault("constraints", [])
+        if detail not in brief["constraints"]:
+            brief["constraints"].append(detail)
+
     goal_answer = answers.get("goal", "").strip()
     if goal_answer:
         brief["goal"] = f"{brief.get('goal', '').strip()} — {goal_answer}".strip(" —")
@@ -423,11 +548,43 @@ def merge_clarification_answers(
     workflow["phase"] = "ready"
     workflow["pending_user_prompt"] = None
     clar = workflow.get("clarification") or {}
+    clar["questions_asked"] = list(clar.get("questions") or [])
     clar["answers"] = answers
+    clar["original_prompt"] = original_prompt
     clar["round"] = int(clar.get("round", 0)) + 1
     clar["questions"] = []
     workflow["clarification"] = clar
     return workflow
+
+
+def build_clarification_header(workflow: Dict[str, Any]) -> str:
+    """Format clarification Q&A for the model (all dynamic question ids)."""
+    clar = workflow.get("clarification") or {}
+    answers = clar.get("answers") or {}
+    questions = clar.get("questions_asked") or clar.get("questions") or []
+    original = (clar.get("original_prompt") or workflow.get("pending_user_prompt") or "").strip()
+    if not questions or not answers:
+        return ""
+    lines = ["[Clarification — user answered follow-up questions]"]
+    if original:
+        lines.append(f"Original user message: {original}")
+    for item in questions:
+        if isinstance(item, dict):
+            qid = str(item.get("id") or "")
+            qtext = str(item.get("text") or "").strip()
+        else:
+            qid = getattr(item, "id", "")
+            qtext = getattr(item, "text", "").strip()
+        if not qtext:
+            continue
+        ans = str(answers.get(qid, "") or "").strip()
+        if ans:
+            lines.append(f"Q: {qtext}")
+            lines.append(f"A: {ans}")
+    if len(lines) <= 1:
+        return ""
+    lines.append("[End clarification]")
+    return "\n".join(lines)
 
 
 def build_brief_header(workflow: Dict[str, Any]) -> str:
@@ -467,9 +624,9 @@ def append_regen_lesson(workflow: Dict[str, Any], issue: str, fix: str, attempt:
 
 def format_clarification_message(questions: List[ClarificationQuestion]) -> str:
     lines = [
-        "Before I write a full answer, I need a little more detail from you.",
+        "I need a little more detail before I can answer accurately.",
         "",
-        "Tap **Answer questions** below (or use the button at the top of the chat).",
+        "Tap **Answer questions** below — please answer every question shown.",
         "",
     ]
     for i, q in enumerate(questions, 1):

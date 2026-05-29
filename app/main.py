@@ -45,6 +45,9 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("✅ Database initialized")
 
+    from .engines.guardrails import reset_guardrail_engine
+    reset_guardrail_engine()
+
     # Ensure default admin user from env exists
     async with async_session_maker() as session:
         await ensure_default_admin_user(session)
@@ -197,7 +200,11 @@ async def serve_deploy_code():
         "app/routes/logs.py",
         "app/routes/auth.py",
         "app/chat_storage.py",
+        "app/input_pii_consent.py",
+        "app/clarification_assessment.py",
+        "app/response_cleanup.py",
         "app/output_review.py",
+        "app/task_workflow.py",
         "app/security_threshold.py",
         "app/engines/chat_service.py",
         "app/static/home.html",
@@ -366,5 +373,5 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.backend_host,
         port=settings.backend_port,
-        reload=False,
+        reload=True,
     )

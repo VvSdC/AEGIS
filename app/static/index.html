@@ -240,8 +240,8 @@
         <div class="chat-modal chat-modal-lg" id="clarify-modal">
             <div class="chat-modal-header">
                 <div>
-                    <h2 id="clarify-modal-title">Help us understand your question</h2>
-                    <p id="clarify-modal-desc">Short answers help us give you a better reply. We have not written the full answer yet.</p>
+                    <h2 id="clarify-modal-title">A few quick questions</h2>
+                    <p id="clarify-modal-desc">We checked your message and need a little more detail before we write the full answer.</p>
                 </div>
                 <button type="button" class="chat-modal-close" id="close-clarify-btn" aria-label="Close">×</button>
             </div>
@@ -249,6 +249,36 @@
             <div class="chat-modal-footer">
                 <button type="button" id="cancel-clarify-btn" class="btn-secondary text-sm">Later</button>
                 <button type="button" id="submit-clarify-btn" class="btn-primary text-sm">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-modal-backdrop" id="input-pii-backdrop" role="dialog" aria-modal="true" aria-labelledby="input-pii-modal-title">
+        <div class="chat-modal chat-modal-lg input-pii-modal" id="input-pii-modal">
+            <div class="chat-modal-header">
+                <div>
+                    <h2 id="input-pii-modal-title">Personal details found</h2>
+                    <p id="input-pii-modal-desc">Choose what happens before your message is sent to the AI.</p>
+                </div>
+                <button type="button" class="chat-modal-close" id="close-input-pii-btn" aria-label="Close">×</button>
+            </div>
+            <div class="chat-modal-body">
+                <div class="input-pii-callout">
+                    <p>Sharing personal details with an AI service can lead to identity theft, fraud, or privacy loss. Those details may be stored or used in ways you did not expect.</p>
+                </div>
+                <p class="input-pii-list-title">Detected in your message</p>
+                <div class="input-pii-entity-chips" id="input-pii-entity-chips"></div>
+                <div id="input-pii-allow-some-section" class="input-pii-allow-some hidden">
+                    <p class="input-pii-list-title">Choose what to send</p>
+                    <p class="field-hint">Check each type you want sent as written. Anything unchecked will be hidden.</p>
+                    <div id="input-pii-checklist" class="chat-pii-checklist input-pii-checklist"></div>
+                </div>
+            </div>
+            <div class="chat-modal-footer chat-input-pii-footer">
+                <button type="button" id="input-pii-deny-btn" class="btn-danger text-sm">Don't allow</button>
+                <button type="button" id="input-pii-some-btn" class="btn-secondary text-sm">Send some</button>
+                <button type="button" id="input-pii-all-btn" class="btn-primary text-sm">Send all</button>
+                <button type="button" id="input-pii-continue-btn" class="btn-primary text-sm hidden">Send selected</button>
             </div>
         </div>
     </div>
@@ -292,6 +322,9 @@
         let sending = false;
 
         let pendingReviewMessageId = null;
+        let pendingInputPiiUserMessageId = null;
+        let pendingPiiEntities = [];
+        let chatCapabilities = { input_pii_consent: false };
         let currentSessionMeta = null;
         let clarifyQuestions = [];
 
@@ -305,6 +338,7 @@
             settingsBackdrop: document.getElementById('settings-backdrop'),
             deleteBackdrop: document.getElementById('delete-backdrop'),
             reviewBackdrop: document.getElementById('review-backdrop'),
+            inputPiiBackdrop: document.getElementById('input-pii-backdrop'),
             clarifyBackdrop: document.getElementById('clarify-backdrop'),
             chatNotice: document.getElementById('chat-notice'),
             chatNoticeText: document.getElementById('chat-notice-text'),
@@ -326,6 +360,17 @@
             mistral: 'Mistral',
         };
 
+        function formatApiError(data, status) {
+            let detail = data?.detail;
+            if (Array.isArray(detail)) {
+                detail = detail.map((d) => d.msg || JSON.stringify(d)).join('; ');
+            }
+            if (status === 404 && (detail === 'Not Found' || detail === 'not found')) {
+                return 'The server does not support this action yet. Stop and restart the AEGIS app (python app/main.py), then refresh this page.';
+            }
+            return detail || `HTTP ${status}`;
+        }
+
         async function api(path, options = {}) {
             const res = await fetch(`${API}/api/v1${path}`, {
                 credentials: 'include',
@@ -341,7 +386,7 @@
                 return null;
             }
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+            if (!res.ok) throw new Error(formatApiError(data, res.status));
             return data;
         }
 
@@ -360,66 +405,190 @@
             return html;
         }
 
-        function formatInlineText(text) {
-            const paragraphs = text.split(/\n\n+/);
-            return paragraphs.map((para) => {
-                const lines = para.split('\n');
-                const chunks = [];
-                let olItems = [];
-                let ulItems = [];
+        const CODE_LANG_LINE = /^(bash|shell|sh|python|py|javascript|js|typescript|ts|json|yaml|yml|sql|html|css|text|code)$/i;
 
-                const flushOl = () => {
-                    if (!olItems.length) return;
-                    chunks.push(`<ol>${olItems.map((li) => `<li>${li}</li>`).join('')}</ol>`);
-                    olItems = [];
-                };
-                const flushUl = () => {
-                    if (!ulItems.length) return;
-                    chunks.push(`<ul>${ulItems.map((li) => `<li>${li}</li>`).join('')}</ul>`);
-                    ulItems = [];
-                };
+        function normalizeAssistantMarkdown(raw) {
+            let text = (raw || '').replace(/\r\n/g, '\n');
+            text = text.replace(/([^\n])(#{1,4}\s)/g, '$1\n\n$2');
+            text = text.replace(/([.!?])([A-Z][a-z])/g, '$1\n\n$2');
+            text = text.replace(/^\s*Copy\s*$/gim, '');
+            return text.replace(/\n{3,}/g, '\n\n').trim();
+        }
 
-                for (const rawLine of lines) {
-                    const trimmed = rawLine.trim();
-                    if (!trimmed) continue;
-                    const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
-                    const ulMatch = trimmed.match(/^\*\s+(.*)$/);
-                    if (olMatch) {
-                        flushUl();
-                        olItems.push(formatInlineSegment(olMatch[1]));
-                    } else if (ulMatch) {
-                        flushOl();
-                        ulItems.push(formatInlineSegment(ulMatch[1]));
-                    } else {
-                        flushOl();
-                        flushUl();
-                        chunks.push(formatInlineSegment(trimmed));
+        function wrapUnfencedCodeBlocks(text) {
+            const lines = text.split('\n');
+            const out = [];
+            let i = 0;
+            while (i < lines.length) {
+                const trimmed = lines[i].trim();
+                if (CODE_LANG_LINE.test(trimmed)) {
+                    const lang = trimmed.toLowerCase();
+                    i += 1;
+                    while (i < lines.length && lines[i].trim() === 'Copy') i += 1;
+                    const codeLines = [];
+                    while (i < lines.length) {
+                        const t = lines[i];
+                        const tTrim = t.trim();
+                        if (tTrim === 'Copy') {
+                            i += 1;
+                            continue;
+                        }
+                        if (!tTrim && codeLines.length) {
+                            let j = i + 1;
+                            while (j < lines.length && !lines[j].trim()) j += 1;
+                            if (j < lines.length && isMarkdownBlockStart(lines[j].trim())) break;
+                        }
+                        if (tTrim && isMarkdownBlockStart(tTrim) && codeLines.length) break;
+                        if (tTrim && CODE_LANG_LINE.test(tTrim) && codeLines.length) break;
+                        codeLines.push(t);
+                        i += 1;
                     }
+                    const code = codeLines.join('\n').replace(/\n+$/, '').trim();
+                    if (code) {
+                        out.push(`\`\`\`${lang}\n${code}\n\`\`\``);
+                        continue;
+                    }
+                }
+                out.push(lines[i]);
+                i += 1;
+            }
+            return out.join('\n');
+        }
+
+        function isMarkdownBlockStart(trimmed) {
+            return /^#{1,4}\s/.test(trimmed)
+                || /^---+$/.test(trimmed)
+                || /^\d+\.\s/.test(trimmed)
+                || /^[-*]\s+/.test(trimmed)
+                || (trimmed.includes('|') && trimmed.startsWith('|'));
+        }
+
+        function isTableSeparator(line) {
+            return /^\|?[\s\-:|]+\|?$/.test(line.replace(/\|/g, '').trim()) && line.includes('-');
+        }
+
+        function parseMarkdownTable(lines, start) {
+            const rows = [];
+            let i = start;
+            while (i < lines.length && lines[i].trim().includes('|')) {
+                const row = lines[i].trim();
+                if (isTableSeparator(row)) {
+                    i += 1;
+                    continue;
+                }
+                const cells = row.split('|').map((c) => c.trim()).filter(Boolean);
+                if (cells.length) rows.push(cells);
+                i += 1;
+            }
+            if (rows.length < 2) return null;
+            const [head, ...body] = rows;
+            const thead = `<thead><tr>${head.map((c) => `<th>${formatInlineSegment(c)}</th>`).join('')}</tr></thead>`;
+            const tbody = `<tbody>${body.map((row) =>
+                `<tr>${row.map((c) => `<td>${formatInlineSegment(c)}</td>`).join('')}</tr>`,
+            ).join('')}</tbody>`;
+            return { html: `<div class="chat-md-table-wrap"><table class="chat-md-table">${thead}${tbody}</table></div>`, next: i };
+        }
+
+        function formatTextBlock(text) {
+            const lines = text.split('\n');
+            const chunks = [];
+            let olItems = [];
+            let ulItems = [];
+            let i = 0;
+
+            const flushOl = () => {
+                if (!olItems.length) return;
+                chunks.push(`<ol class="chat-md-ol">${olItems.map((li) => `<li>${li}</li>`).join('')}</ol>`);
+                olItems = [];
+            };
+            const flushUl = () => {
+                if (!ulItems.length) return;
+                chunks.push(`<ul class="chat-md-ul">${ulItems.map((li) => `<li>${li}</li>`).join('')}</ul>`);
+                ulItems = [];
+            };
+
+            while (i < lines.length) {
+                const trimmed = lines[i].trim();
+                if (!trimmed) {
+                    i += 1;
+                    continue;
+                }
+                if (trimmed.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+                    flushOl();
+                    flushUl();
+                    const table = parseMarkdownTable(lines, i);
+                    if (table) {
+                        chunks.push(table.html);
+                        i = table.next;
+                        continue;
+                    }
+                }
+                if (/^---+$/.test(trimmed)) {
+                    flushOl();
+                    flushUl();
+                    chunks.push('<hr class="chat-md-hr">');
+                    i += 1;
+                    continue;
+                }
+                const h4 = trimmed.match(/^####\s+(.+)$/);
+                const h3 = trimmed.match(/^###\s+(.+)$/);
+                const h2 = trimmed.match(/^##\s+(.+)$/);
+                const h1 = trimmed.match(/^#\s+(.+)$/);
+                if (h4 || h3 || h2 || h1) {
+                    flushOl();
+                    flushUl();
+                    const level = h4 ? 4 : h3 ? 3 : h2 ? 2 : 1;
+                    const body = formatInlineSegment((h4 || h3 || h2 || h1)[1]);
+                    chunks.push(`<h${level} class="chat-md-h${level}">${body}</h${level}>`);
+                    i += 1;
+                    continue;
+                }
+                const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+                const ulStar = trimmed.match(/^\*\s+(.*)$/);
+                const ulDash = trimmed.match(/^-\s+(.*)$/);
+                if (olMatch) {
+                    flushUl();
+                    olItems.push(formatInlineSegment(olMatch[1]));
+                    i += 1;
+                    continue;
+                }
+                if (ulStar || ulDash) {
+                    flushOl();
+                    ulItems.push(formatInlineSegment((ulStar || ulDash)[1]));
+                    i += 1;
+                    continue;
                 }
                 flushOl();
                 flushUl();
-
-                if (!chunks.length) return '';
-                if (chunks.length === 1 && !chunks[0].startsWith('<ol>') && !chunks[0].startsWith('<ul>')) {
-                    return `<p>${chunks[0]}</p>`;
+                const paraLines = [trimmed];
+                i += 1;
+                while (i < lines.length) {
+                    const next = lines[i].trim();
+                    if (!next || isMarkdownBlockStart(next) || /^\d+\.\s/.test(next) || /^[-*]\s+/.test(next)) break;
+                    paraLines.push(next);
+                    i += 1;
                 }
-                return chunks.join('');
-            }).join('');
+                chunks.push(`<p>${formatInlineSegment(paraLines.join(' '))}</p>`);
+            }
+            flushOl();
+            flushUl();
+            return chunks.join('');
         }
 
         function formatMessageContent(raw) {
             if (!raw) return '';
+            const prepared = wrapUnfencedCodeBlocks(normalizeAssistantMarkdown(raw));
             const parts = [];
             const re = /```(\w*)\n?([\s\S]*?)```/g;
             let last = 0;
             let m;
-            while ((m = re.exec(raw)) !== null) {
-                if (m.index > last) parts.push({ type: 'text', value: raw.slice(last, m.index) });
+            while ((m = re.exec(prepared)) !== null) {
+                if (m.index > last) parts.push({ type: 'text', value: prepared.slice(last, m.index) });
                 parts.push({ type: 'code', lang: m[1] || 'code', value: m[2].replace(/\n$/, '') });
                 last = re.lastIndex;
             }
-            if (last < raw.length) parts.push({ type: 'text', value: raw.slice(last) });
-            if (!parts.length) parts.push({ type: 'text', value: raw });
+            if (last < prepared.length) parts.push({ type: 'text', value: prepared.slice(last) });
+            if (!parts.length) parts.push({ type: 'text', value: prepared });
 
             return parts.map((seg) => {
                 if (seg.type === 'code') {
@@ -433,8 +602,13 @@
                         <pre><code>${code}</code></pre>
                     </div>`;
                 }
-                return formatInlineText(seg.value);
+                return formatTextBlock(seg.value);
             }).join('');
+        }
+
+        function messageUsesRichFormatting(text) {
+            if (!text) return false;
+            return /```|#{1,4}\s|\*\*|__|\|.+\||^---$|^\d+\.\s|^[-*]\s/m.test(text);
         }
 
         function pipelineIcon(state) {
@@ -464,7 +638,7 @@
         function friendlyPipelineStep(step) {
             const label = PIPELINE_STEP_LABELS[step.id] || step.label;
             let detail = step.detail || '';
-            if (/llama|llm|tier|guard|pii screening|fast screening/i.test(detail)) {
+            if (/hard block|llama|llm|tier|guard|pii screening|fast screening|detected -/i.test(detail)) {
                 if (step.state === 'blocked') detail = 'We could not continue with this message.';
                 else if (step.state === 'done') detail = 'Done';
                 else if (step.state === 'skipped') detail = 'Not needed this time';
@@ -473,12 +647,26 @@
             return { ...step, label, detail };
         }
 
+        async function loadChatCapabilities() {
+            try {
+                chatCapabilities = await api('/chat/capabilities');
+            } catch {
+                chatCapabilities = { input_pii_consent: false };
+            }
+            if (!chatCapabilities.input_pii_consent) {
+                els.chatNotice.innerHTML = '<p class="chat-notice-text"><strong>Server update needed.</strong> Personal-detail choices are not available until you restart AEGIS (<code>python app/main.py</code>) and refresh this page.</p>';
+                els.chatNotice.classList.remove('hidden');
+            }
+        }
+
         function renderUserNotice(session) {
             currentSessionMeta = session;
             if (!session || !currentSessionId) {
+                if (!chatCapabilities.input_pii_consent) return;
                 els.chatNotice.classList.add('hidden');
                 return;
             }
+            if (!chatCapabilities.input_pii_consent) return;
             const needsClarify = session.phase === 'clarifying' &&
                 (session.clarification_questions?.length || clarifyQuestions.length);
             if (!needsClarify) {
@@ -507,6 +695,20 @@
             el.textContent = `Right now: ${region} · ${unclear} · ${inputCheck} · ${outputCheck} · ${code} · Answers from ${provider}${model ? ` (${model})` : ''}.`;
         }
 
+        function anyModalOpen() {
+            return [
+                els.settingsBackdrop,
+                els.deleteBackdrop,
+                els.reviewBackdrop,
+                els.inputPiiBackdrop,
+                els.clarifyBackdrop,
+            ].some((el) => el.classList.contains('open'));
+        }
+
+        function syncBodyScrollLock() {
+            document.body.style.overflow = anyModalOpen() ? 'hidden' : '';
+        }
+
         function openClarifyModal(questions) {
             clarifyQuestions = questions || clarifyQuestions || [];
             const container = document.getElementById('clarify-questions');
@@ -521,15 +723,12 @@
                 </div>`;
             }).join('');
             els.clarifyBackdrop.classList.add('open');
-            document.body.style.overflow = 'hidden';
+            syncBodyScrollLock();
         }
 
         function closeClarifyModal() {
             els.clarifyBackdrop.classList.remove('open');
-            if (!els.settingsBackdrop.classList.contains('open') && !els.deleteBackdrop.classList.contains('open') &&
-                !els.reviewBackdrop.classList.contains('open')) {
-                document.body.style.overflow = '';
-            }
+            syncBodyScrollLock();
         }
 
         function collectClarifyAnswers() {
@@ -546,29 +745,55 @@
         async function submitClarification() {
             if (!currentSessionId) return;
             const answers = collectClarifyAnswers();
-            if (!Object.keys(answers).length) {
-                alert('Please answer at least one question.');
+            const unanswered = clarifyQuestions.filter((q) => !answers[q.id]?.trim());
+            if (unanswered.length) {
+                alert('Please answer all questions so we can respond accurately.');
                 return;
             }
-            setAppLoading(true, 'Getting your answer…');
             closeClarifyModal();
+            const pendingId = 'clarify-pending';
+            const clarifyMsgId = els.messagesInner.querySelector(
+                '.chat-row.assistant[data-message-id]',
+            )?.dataset?.messageId;
+            const assistantRows = els.messagesInner.querySelectorAll('.chat-row.assistant');
+            const lastAssistant = assistantRows[assistantRows.length - 1];
+            if (lastAssistant) {
+                const attrs = clarifyMsgId ? ` data-message-id="${clarifyMsgId}"` : '';
+                lastAssistant.outerHTML = `<div class="chat-row assistant" id="${pendingId}"${attrs}>
+                    <div class="chat-bubble assistant"><p class="chat-pending-text">Getting your answer…</p></div></div>`;
+            }
+            scrollToBottom();
             try {
                 const res = await api(`/chat/sessions/${currentSessionId}/clarify`, {
                     method: 'POST',
                     body: JSON.stringify({ answers, continue_generation: true }),
                 });
-                els.messagesInner.insertAdjacentHTML('beforeend',
-                    renderAssistantBubble(res.assistant_message));
+                clarifyQuestions = [];
+                const pendingRow = document.getElementById(pendingId);
+                const targetId = res.assistant_message.id;
+                const byId = targetId
+                    ? els.messagesInner.querySelector(`.chat-row.assistant[data-message-id="${targetId}"]`)
+                    : null;
+                const html = renderAssistantBubble(res.assistant_message);
+                if (pendingRow) {
+                    pendingRow.outerHTML = html;
+                } else if (byId) {
+                    byId.outerHTML = html;
+                } else {
+                    els.messagesInner.insertAdjacentHTML('beforeend', html);
+                }
                 if (res.assistant_message.output_review?.requires_user_action) {
                     openReviewModal(res.assistant_message);
                 }
                 const session = await api(`/chat/sessions/${currentSessionId}`);
                 renderUserNotice(session);
                 await loadSessions();
+                syncBodyScrollLock();
+                requestAnimationFrame(() => scrollToBottom());
             } catch (err) {
-                alert(err.message);
-            } finally {
-                setAppLoading(false);
+                document.getElementById(pendingId)?.remove();
+                syncBodyScrollLock();
+                alert(err.message || 'Something went wrong. Please try again.');
             }
         }
 
@@ -597,15 +822,14 @@
 
         function renderUserBubble(msg, ephemeralText) {
             let text = msg.content;
-            if (msg.storage_mode === 'withheld') {
-                text = ephemeralText || '[Your message was not saved because it could not be sent safely]';
+            const pendingPii = msg.input_pii_consent?.requires_user_action;
+            if (msg.storage_mode === 'withheld' || (pendingPii && ephemeralText)) {
+                text = ephemeralText || '[Your message is waiting for you to choose what to share]';
             } else if (msg.storage_mode === 'redacted') {
-                text = msg.content || '[Some details were hidden when we saved this message]';
+                text = ephemeralText || msg.content || '[Some details were hidden when we saved this message]';
             }
             const withheld = msg.storage_mode === 'withheld' ? ' withheld' : '';
-            const needsRichText = msg.storage_mode !== 'withheld' && (
-                text.includes('```') || text.includes('**') || /^\s*\d+\.\s/m.test(text) || /^\s*\*\s/m.test(text)
-            );
+            const needsRichText = msg.storage_mode !== 'withheld' && messageUsesRichFormatting(text);
             const body = needsRichText ? formatMessageContent(text) : escapeHtml(text);
             const wrap = !needsRichText
                 ? `<div class="chat-bubble user${withheld}">${body}</div>`
@@ -637,13 +861,13 @@
             const tier1Summary = (og.tier1?.warning_summary || '').trim();
             const summary = (og.summary || '').trim();
             const isSafe = og.safe_to_use && !og.action_required && findings.length === 0;
-            const level = isSafe ? 'safe'
-                : (og.action_required || findings.some((f) => f.severity === 'critical') ? 'danger' : 'warn');
-            const icon = isSafe ? '✓' : (level === 'danger' ? '✕' : '⚠');
+            if (isSafe) return '';
 
-            const headline = isSafe
-                ? 'This answer looks fine'
-                : 'Please review this answer';
+            const level = og.action_required || findings.some((f) => f.severity === 'critical')
+                ? 'danger' : 'warn';
+            const icon = level === 'danger' ? '✕' : '⚠';
+
+            const headline = 'Please review this answer';
 
             let body = '';
             if (!isSafe) {
@@ -675,6 +899,18 @@
             </details>`;
         }
 
+        function isLegacyPiiHardBlock(msg) {
+            if (msg.requires_input_pii_consent || msg.allow) return false;
+            const text = (msg.content || '').toLowerCase();
+            const piiHint = (msg.identified_entities || []).some((e) =>
+                /pan|aadhaar|phone|email|pii|card/i.test(String(e)));
+            return piiHint && (
+                text.includes('hard block')
+                || text.includes('blocked by screening')
+                || text.includes('blocked by tier')
+            );
+        }
+
         function renderAssistantBubble(msg, { pipelineOpen = false } = {}) {
             const entities = (msg.identified_entities || []).map((e) =>
                 `<span class="chat-entity-pill">${escapeHtml(e)}</span>`).join('');
@@ -682,10 +918,21 @@
             const review = msg.output_review;
             const pending = review?.status === 'pending_review' && review?.requires_user_action;
             let body = '';
-            if (msg.requires_clarification && (msg.clarification_questions?.length)) {
+            if (isLegacyPiiHardBlock(msg)) {
+                body = `<div class="chat-pii-consent-pending chat-legacy-block-notice">
+                    <p class="chat-review-pending-title">Personal details were blocked</p>
+                    <p class="chat-review-pending-desc">The app is still running old code that rejects PAN and similar details automatically. Stop the server (Ctrl+C in your terminal), run <strong>python app/main.py</strong> again, refresh this page, and send a new message.</p>
+                </div>`;
+            } else if (msg.requires_input_pii_consent && msg.input_pii_user_message_id) {
+                body = `<div class="chat-pii-consent-pending" data-user-message-id="${msg.input_pii_user_message_id}">
+                    <p class="chat-review-pending-title">Personal details need your OK</p>
+                    <p class="chat-review-pending-desc">We found personal information in your message. Choose whether to send it, hide part of it, or cancel.</p>
+                    <button type="button" class="btn-secondary text-sm chat-open-input-pii-btn" data-user-message-id="${msg.input_pii_user_message_id}">Choose what to share</button>
+                </div>`;
+            } else if (msg.requires_clarification && (msg.clarification_questions?.length) && !msg.allow) {
                 body = `<div class="chat-clarify-pending">
                     <p class="chat-review-pending-title">A few quick questions</p>
-                    <p class="chat-review-pending-desc">Your answer is not ready yet. Please answer the short questions so we understand what you need.</p>
+                    <p class="chat-review-pending-desc">We need a bit more detail about your question before we can answer. Tap below — the questions are based on what you wrote.</p>
                     <button type="button" class="btn-secondary text-sm chat-open-clarify-btn">Answer questions</button>
                 </div>`;
             } else if (pending) {
@@ -760,16 +1007,178 @@
         function openReviewModal(msg) {
             populateReviewModal(msg);
             els.reviewBackdrop.classList.add('open');
-            document.body.style.overflow = 'hidden';
+            syncBodyScrollLock();
+        }
+
+        function normalizePiiEntities(userMsg) {
+            const fromConsent = userMsg.input_pii_consent?.entities || [];
+            if (fromConsent.length) return fromConsent;
+            const names = userMsg.identified_entities || [];
+            return names.map((name) => ({
+                id: `pii_${String(name).toLowerCase().replace(/\s+/g, '_')}`,
+                entity_name: name,
+                kinds: [],
+            }));
+        }
+
+        function renderPiiChecklistHtml(entities) {
+            return entities.map((e) => {
+                const kinds = (e.kinds || []).length
+                    ? `<ul class="input-pii-kinds">${(e.kinds || []).map((k) =>
+                        `<li>${escapeHtml(k)}</li>`).join('')}</ul>`
+                    : '<p class="input-pii-kinds-empty">Personal detail detected in your message</p>';
+                return `<label class="chat-pii-check input-pii-check-row input-pii-entity-group">
+                    <input type="checkbox" name="input-pii-allow" value="${escapeHtml(e.id)}" checked>
+                    <span class="input-pii-check-body">
+                        <span class="input-pii-entity-title">${escapeHtml(e.entity_name)}</span>
+                        ${kinds}
+                    </span>
+                </label>`;
+            }).join('');
+        }
+
+        function resetInputPiiModalStep1() {
+            document.getElementById('input-pii-allow-some-section').classList.add('hidden');
+            document.getElementById('input-pii-continue-btn').classList.add('hidden');
+            document.getElementById('input-pii-some-btn').classList.toggle('hidden', pendingPiiEntities.length === 0);
+            document.getElementById('input-pii-all-btn').classList.remove('hidden');
+            document.getElementById('input-pii-deny-btn').classList.remove('hidden');
+        }
+
+        function showPiiPendingInChat(pendingId) {
+            document.getElementById(pendingId)?.remove();
+            const assistantRows = els.messagesInner.querySelectorAll('.chat-row.assistant');
+            const lastAssistant = assistantRows[assistantRows.length - 1];
+            if (lastAssistant) {
+                lastAssistant.outerHTML = `<div class="chat-row assistant" id="${pendingId}">
+                    <div class="chat-bubble assistant"><p class="chat-pending-text">Getting your answer…</p></div></div>`;
+            }
+            scrollToBottom();
+        }
+
+        function resolveInputPiiUserMessageId() {
+            const fromModal = Number(document.getElementById('input-pii-modal').dataset.userMessageId);
+            return pendingInputPiiUserMessageId || (Number.isFinite(fromModal) && fromModal > 0 ? fromModal : null);
+        }
+
+        async function openInputPiiModal(userMsg, typedText) {
+            pendingInputPiiUserMessageId = userMsg.id;
+            document.getElementById('input-pii-modal').dataset.userMessageId = String(userMsg.id);
+            let entities = normalizePiiEntities(userMsg);
+            if (!entities.length && currentSessionId) {
+                try {
+                    const messages = await api(`/chat/sessions/${currentSessionId}/messages`);
+                    const fresh = messages.find((m) => m.id === userMsg.id);
+                    entities = normalizePiiEntities(fresh || userMsg);
+                } catch { /* send-all still works */ }
+            }
+            pendingPiiEntities = entities;
+            if (!entities.length) {
+                document.getElementById('input-pii-entity-chips').innerHTML =
+                    '<span class="input-pii-chip input-pii-chip-muted">Could not load names — use Send all or Don\'t allow</span>';
+                document.getElementById('input-pii-checklist').innerHTML =
+                    '<p class="field-hint">No checklist available. Tap <strong>Send all</strong> or <strong>Don\'t allow</strong>.</p>';
+            } else {
+                document.getElementById('input-pii-entity-chips').innerHTML = entities
+                    .map((e) => `<span class="input-pii-chip">${escapeHtml(e.entity_name)}</span>`)
+                    .join('');
+                document.getElementById('input-pii-checklist').innerHTML = renderPiiChecklistHtml(entities);
+            }
+            resetInputPiiModalStep1();
+            els.inputPiiBackdrop.classList.add('open');
+            syncBodyScrollLock();
+        }
+
+        function closeInputPiiModal(clearPending = true) {
+            if (clearPending) {
+                pendingInputPiiUserMessageId = null;
+                delete document.getElementById('input-pii-modal').dataset.userMessageId;
+            }
+            els.inputPiiBackdrop.classList.remove('open');
+            syncBodyScrollLock();
+        }
+
+        function getSelectedInputPiiIds() {
+            return [...document.querySelectorAll('#input-pii-checklist input[type="checkbox"]:checked')]
+                .map((cb) => cb.value);
+        }
+
+        async function submitInputPiiConsent(action) {
+            const userMessageId = resolveInputPiiUserMessageId();
+            if (!userMessageId || !currentSessionId) {
+                alert('Could not find your message. Close this dialog and send your message again.');
+                return;
+            }
+            const allowedIds = action === 'allow_some' ? getSelectedInputPiiIds() : [];
+            if (action === 'allow_some' && !allowedIds.length) {
+                alert('Select at least one type to send, or tap Send all.');
+                return;
+            }
+            const pendingId = `pii-pending-${userMessageId}`;
+            if (action === 'deny') {
+                setAppLoading(true, 'Keeping your message private…');
+                closeInputPiiModal(true);
+            } else {
+                pendingInputPiiUserMessageId = userMessageId;
+                els.inputPiiBackdrop.classList.remove('open');
+                syncBodyScrollLock();
+                showPiiPendingInChat(pendingId);
+            }
+            try {
+                const res = await api(
+                    `/chat/sessions/${currentSessionId}/messages/${userMessageId}/pii-consent`,
+                    {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action,
+                            allowed_pii_finding_ids: allowedIds,
+                        }),
+                    },
+                );
+                document.getElementById(pendingId)?.remove();
+                const userRows = els.messagesInner.querySelectorAll('.chat-row.user');
+                const lastUser = userRows[userRows.length - 1];
+                const userEphemeral = res.user_message.ephemeral_display
+                    || (res.user_message.storage_mode === 'withheld' ? null : res.user_message.content);
+                if (lastUser) {
+                    lastUser.outerHTML = renderUserBubble(res.user_message, userEphemeral);
+                }
+                const assistantRow = els.messagesInner.querySelector(
+                    `.chat-row.assistant[data-message-id="${res.assistant_message.id}"]`,
+                );
+                if (assistantRow) {
+                    assistantRow.outerHTML = renderAssistantBubble(res.assistant_message);
+                } else {
+                    els.messagesInner.insertAdjacentHTML('beforeend',
+                        renderAssistantBubble(res.assistant_message));
+                }
+                if (res.assistant_message.requires_clarification &&
+                    res.assistant_message.clarification_questions?.length) {
+                    clarifyQuestions = res.assistant_message.clarification_questions;
+                    openClarifyModal(clarifyQuestions);
+                }
+                if (res.assistant_message.output_review?.requires_user_action) {
+                    openReviewModal(res.assistant_message);
+                }
+                const session = await api(`/chat/sessions/${currentSessionId}`);
+                renderUserNotice(session);
+                await loadSessions();
+                scrollToBottom();
+            } catch (err) {
+                document.getElementById(pendingId)?.remove();
+                alert(err.message || 'Something went wrong. Please try again.');
+            } finally {
+                pendingInputPiiUserMessageId = null;
+                pendingPiiEntities = [];
+                delete document.getElementById('input-pii-modal').dataset.userMessageId;
+                setAppLoading(false);
+            }
         }
 
         function closeReviewModal() {
             pendingReviewMessageId = null;
             els.reviewBackdrop.classList.remove('open');
-            if (!els.settingsBackdrop.classList.contains('open') && !els.deleteBackdrop.classList.contains('open') &&
-                !els.clarifyBackdrop.classList.contains('open')) {
-                document.body.style.overflow = '';
-            }
+            syncBodyScrollLock();
         }
 
         function replaceAssistantMessage(msg) {
@@ -823,7 +1232,10 @@
 
         function scrollToBottom() {
             const el = document.getElementById('chat-messages');
-            el.scrollTop = el.scrollHeight;
+            if (!el) return;
+            requestAnimationFrame(() => {
+                el.scrollTop = el.scrollHeight;
+            });
         }
 
         function getModelLabel(provider, apiModel) {
@@ -886,16 +1298,14 @@
                 desc.textContent = 'This chat and all its messages will be permanently removed. This cannot be undone.';
             }
             els.deleteBackdrop.classList.add('open');
-            document.body.style.overflow = 'hidden';
+            syncBodyScrollLock();
             document.getElementById('confirm-delete-btn').focus();
         }
 
         function closeDeleteModal() {
             pendingDeleteId = null;
             els.deleteBackdrop.classList.remove('open');
-            if (!els.settingsBackdrop.classList.contains('open') && !els.reviewBackdrop.classList.contains('open')) {
-                document.body.style.overflow = '';
-            }
+            syncBodyScrollLock();
         }
 
         async function confirmDeleteSession() {
@@ -1009,15 +1419,12 @@
         function openSettings() {
             updateSettingsSummary();
             els.settingsBackdrop.classList.add('open');
-            document.body.style.overflow = 'hidden';
+            syncBodyScrollLock();
         }
 
         function closeSettings() {
             els.settingsBackdrop.classList.remove('open');
-            if (!els.deleteBackdrop.classList.contains('open') && !els.reviewBackdrop.classList.contains('open') &&
-                !els.clarifyBackdrop.classList.contains('open')) {
-                document.body.style.overflow = '';
-            }
+            syncBodyScrollLock();
         }
 
         async function loadInferenceOptions() {
@@ -1052,7 +1459,6 @@
                 <div class="chat-bubble assistant"><p class="chat-pending-text">Working on your answer…</p></div></div>`;
 
             els.chatEmpty.classList.add('hidden');
-            els.messagesInner.querySelectorAll('.chat-row').forEach((row) => row.remove());
             els.messagesInner.insertAdjacentHTML('beforeend', userHtml + loadingHtml);
             scrollToBottom();
 
@@ -1065,13 +1471,19 @@
                 const userRows = els.messagesInner.querySelectorAll('.chat-row.user');
                 const lastUser = userRows[userRows.length - 1];
                 if (lastUser) lastUser.outerHTML = renderUserBubble(res.user_message, text);
+                const showPiiConsent = res.user_message?.input_pii_consent?.requires_user_action
+                    || res.assistant_message.requires_input_pii_consent;
                 els.messagesInner.insertAdjacentHTML('beforeend',
-                    renderAssistantBubble(res.assistant_message, { pipelineOpen: !res.assistant_message.allow }));
-                if (res.assistant_message.requires_clarification && res.assistant_message.clarification_questions?.length) {
+                    renderAssistantBubble(res.assistant_message, {
+                        pipelineOpen: !res.assistant_message.allow && !showPiiConsent,
+                    }));
+                if (showPiiConsent) {
+                    await openInputPiiModal(res.user_message, text);
+                } else if (res.assistant_message.requires_clarification &&
+                    res.assistant_message.clarification_questions?.length) {
                     clarifyQuestions = res.assistant_message.clarification_questions;
                     openClarifyModal(clarifyQuestions);
-                }
-                if (res.assistant_message.output_review?.requires_user_action) {
+                } else if (res.assistant_message.output_review?.requires_user_action) {
                     openReviewModal(res.assistant_message);
                 }
                 const session = await api(`/chat/sessions/${currentSessionId}`);
@@ -1103,7 +1515,34 @@
             if (e.target === els.clarifyBackdrop) closeClarifyModal();
         });
 
+        document.getElementById('close-input-pii-btn').addEventListener('click', closeInputPiiModal);
+        document.getElementById('input-pii-deny-btn').addEventListener('click', () => submitInputPiiConsent('deny'));
+        document.getElementById('input-pii-all-btn').addEventListener('click', () => submitInputPiiConsent('allow_all'));
+        document.getElementById('input-pii-some-btn').addEventListener('click', () => {
+            document.getElementById('input-pii-checklist').innerHTML =
+                renderPiiChecklistHtml(pendingPiiEntities);
+            document.getElementById('input-pii-allow-some-section').classList.remove('hidden');
+            document.getElementById('input-pii-continue-btn').classList.remove('hidden');
+            document.getElementById('input-pii-some-btn').classList.add('hidden');
+            document.getElementById('input-pii-all-btn').classList.add('hidden');
+            document.getElementById('input-pii-deny-btn').classList.add('hidden');
+        });
+        document.getElementById('input-pii-continue-btn').addEventListener('click', () => submitInputPiiConsent('allow_some'));
+        els.inputPiiBackdrop.addEventListener('click', (e) => {
+            if (e.target === els.inputPiiBackdrop) closeInputPiiModal();
+        });
+        document.getElementById('input-pii-modal').addEventListener('click', (e) => e.stopPropagation());
+
         els.messagesInner.addEventListener('click', (e) => {
+            const inputPiiBtn = e.target.closest('.chat-open-input-pii-btn');
+            if (inputPiiBtn) {
+                const uid = Number(inputPiiBtn.dataset.userMessageId);
+                api(`/chat/sessions/${currentSessionId}/messages`).then((messages) => {
+                    const userMsg = messages.find((m) => m.id === uid);
+                    if (userMsg) openInputPiiModal(userMsg, null).catch((err) => alert(err.message));
+                }).catch((err) => alert(err.message));
+                return;
+            }
             const clarifyBtn = e.target.closest('.chat-open-clarify-btn');
             if (clarifyBtn) {
                 openClarifyModal(clarifyQuestions.length ? clarifyQuestions : currentSessionMeta?.clarification_questions);
@@ -1202,7 +1641,9 @@
 
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
-            if (els.reviewBackdrop.classList.contains('open')) closeReviewModal();
+            if (els.inputPiiBackdrop.classList.contains('open')) closeInputPiiModal();
+            else if (els.clarifyBackdrop.classList.contains('open')) closeClarifyModal();
+            else if (els.reviewBackdrop.classList.contains('open')) closeReviewModal();
             else if (els.deleteBackdrop.classList.contains('open')) closeDeleteModal();
             else if (els.settingsBackdrop.classList.contains('open')) closeSettings();
         });
@@ -1215,6 +1656,7 @@
                 document.getElementById('auth-indicator').textContent = user.email || user.username;
                 if (user.role === 'admin') document.getElementById('logs-nav-link').classList.remove('hidden');
                 await loadInferenceOptions();
+                await loadChatCapabilities();
                 const sessions = await loadSessions();
                 if (sessions.length) await selectSession(sessions[0].id, { skipListReload: true, silent: true });
                 else await createSession({ skipListReload: true });

@@ -3,9 +3,15 @@
 from typing import Optional, Tuple
 
 from .engines.guardrails import FilterResult
+from .input_pii_consent import tier1_has_pii
 
 
-def resolve_user_storage(tier1_filter: FilterResult) -> Tuple[Optional[str], str, bool]:
+def resolve_user_storage(
+    tier1_filter: FilterResult,
+    *,
+    pii_consent_pending: bool = False,
+    chat_input: bool = False,
+) -> Tuple[Optional[str], str, bool]:
     """
     Decide what user message content may be persisted.
 
@@ -15,6 +21,13 @@ def resolve_user_storage(tier1_filter: FilterResult) -> Tuple[Optional[str], str
         has_pii_soft: whether soft PII redaction was applied
     """
     if tier1_filter.blocked:
+        return None, "withheld", False
+
+    # Chat never auto-redacts PII — user must choose via consent first.
+    if chat_input and (pii_consent_pending or tier1_has_pii(tier1_filter)):
+        return None, "withheld", False
+
+    if pii_consent_pending:
         return None, "withheld", False
 
     has_soft = any(m.category == "pii_soft_block" for m in tier1_filter.matches)

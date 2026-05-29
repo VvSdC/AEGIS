@@ -303,16 +303,34 @@ class GuardrailEngine:
         self._compliance_model = None
         print("⚠️ Guardrails: Output compliance Tier 2 unavailable (no chat provider configured)")
     
-    def _run_pii_filter(self, text, region=None):
+    def _run_pii_filter(self, text, region=None, *, consent_on_detect: bool = False):
         """
         Region-aware PII filter.
 
-        Pass 1: hard-block patterns. First match short-circuits (no further scanning).
-        Pass 2: soft-block patterns. All occurrences redacted.
+        Legacy mode: hard-block on first hard match; soft patterns auto-redacted.
+        Consent mode: collect all hard/soft matches without blocking or redacting (chat input).
         """
         matches = []
         filtered = text
         entities = self._get_entities_for_region(region)
+
+        if consent_on_detect:
+            for entity in entities:
+                block_suffix = "HARD" if entity["block_type"] == "hard" else "SOFT"
+                category = "pii_hard_block" if entity["block_type"] == "hard" else "pii_soft_block"
+                for pattern in entity["patterns"]:
+                    for hit in pattern.finditer(text):
+                        matches.append(FilterMatch(
+                            filter_name="pii_" + entity["name"].lower() + "_" + block_suffix,
+                            category=category,
+                            matched_text=hit.group(),
+                            start=hit.start(),
+                            end=hit.end(),
+                            replacement=entity["replacement"],
+                            confidence=0.99 if entity["block_type"] == "hard" else 0.7,
+                            tier=1,
+                        ))
+            return text, matches, False, None
 
         for entity in entities:
             if entity["block_type"] != "hard":
@@ -471,7 +489,14 @@ class GuardrailEngine:
         
         return has_critical, matches
     
-    def run_tier1(self, text: str, direction: str = "prompt", region: Optional[str] = None) -> FilterResult:
+    def run_tier1(
+        self,
+        text: str,
+        direction: str = "prompt",
+        region: Optional[str] = None,
+        *,
+        input_pii_consent: bool = False,
+    ) -> FilterResult:
         """
         Run Tier 1 filters: fast regex + YARA pattern matching.
         Target: <30ms latency.
@@ -483,7 +508,11 @@ class GuardrailEngine:
         block_reason = None
         
         # 1. PII Detection & Redaction (with hard/soft block distinction)
-        filtered_text, pii_matches, pii_blocked, pii_block_reason = self._run_pii_filter(filtered_text, region=region)
+        filtered_text, pii_matches, pii_blocked, pii_block_reason = self._run_pii_filter(
+            filtered_text,
+            region=region,
+            consent_on_detect=input_pii_consent and direction == "prompt",
+        )
         all_matches.extend(pii_matches)
         if pii_blocked:
             blocked = True
@@ -576,6 +605,8 @@ class GuardrailEngine:
         tier: str = "both",
         filters: Optional[List[str]] = None,
         region: Optional[str] = None,
+        *,
+        input_pii_consent: bool = False,
     ) -> FilterResult:
         """
         Main entry point: run guardrail filters on text.
@@ -590,7 +621,7 @@ class GuardrailEngine:
             FilterResult with filtered text and match details
         """
         # Run Tier 1
-        result = self.run_tier1(text, direction, region=region)
+        result = self.run_tier1(text, direction, region=region, input_pii_consent=input_pii_consent)
         
         # Run Tier 2 if enabled and not blocked by Tier 1
         if tier in ("2", "both") and not result.blocked:
@@ -872,3 +903,9 @@ def get_guardrail_engine() -> GuardrailEngine:
     if _guardrail_engine is None:
         _guardrail_engine = GuardrailEngine()
     return _guardrail_engine
+
+
+def reset_guardrail_engine() -> None:
+    """Clear cached engine so code changes load on restart."""
+    global _guardrail_engine
+    _guardrail_engine = None

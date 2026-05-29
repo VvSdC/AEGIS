@@ -32,6 +32,7 @@ from ..engines.inference_providers import (
     get_inference_router,
     refresh_gemini_catalog,
     refresh_mistral_catalog,
+    refresh_openrouter_catalog,
 )
 from ..engines.region_policies import build_compliance_header, get_policies_for_region
 from ..security import require_authenticated_user
@@ -96,6 +97,7 @@ REGION_MAP = {
 async def inference_options(user=Depends(require_authenticated_user)):
     await refresh_gemini_catalog()
     await refresh_mistral_catalog()
+    await refresh_openrouter_catalog()
     inference = get_inference_router()
     options = inference.get_available_provider_options()
     return InferenceOptionsResponse(

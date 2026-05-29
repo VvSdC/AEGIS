@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # Application
     app_name: str = Field(default="AEGIS", description="Application name")
-    app_version: str = Field(default="1.0.0", description="Application version")
+    app_version: str = Field(default="1.1.0", description="Application version")
     debug: bool = Field(default=True, description="Debug mode")
     secret_key: str = Field(default="dev-secret-key-change-in-prod", description="Secret key for JWT")
     admin_email: str = Field(default="admin@aegis.local", description="Default admin email")

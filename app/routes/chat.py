@@ -16,6 +16,7 @@ from ..engines.chat_service import (
     list_session_messages,
     process_chat_message,
     resolve_chat_message,
+    resolve_input_pii_consent,
     session_workflow_envelope,
     update_session_brief,
     _message_to_response,
@@ -23,6 +24,7 @@ from ..engines.chat_service import (
 from ..models import ChatMessage, ChatSession
 from ..schemas import (
     ChatClarifyRequest,
+    ChatInputPiiConsentRequest,
     ChatMessageResolveRequest,
     ChatMessageResponse,
     ChatSendMessageRequest,
@@ -33,9 +35,19 @@ from ..schemas import (
     ChatTaskBriefUpdate,
     TaskBrief,
 )
+from ..config import settings
 from ..security import require_authenticated_user
 
 router = APIRouter()
+
+
+@router.get("/chat/capabilities")
+async def chat_capabilities():
+    """Feature flags so the chat UI can detect an outdated server process."""
+    return {
+        "input_pii_consent": True,
+        "app_version": settings.app_version,
+    }
 
 
 async def _session_response(db: AsyncSession, session: ChatSession) -> ChatSessionResponse:
@@ -214,6 +226,31 @@ async def send_message(
     except PermissionError:
         raise HTTPException(status_code=404, detail="Session not found")
     return await process_chat_message(db, session, body.content, user["username"])
+
+
+@router.post(
+    "/chat/sessions/{session_id}/messages/{user_message_id}/pii-consent",
+    response_model=ChatSendMessageResponse,
+)
+async def submit_input_pii_consent(
+    session_id: int,
+    user_message_id: int,
+    body: ChatInputPiiConsentRequest,
+    user=Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await get_session_for_user(db, session_id, user["username"])
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        return await resolve_input_pii_consent(
+            db, session, user_message_id, body, user["username"]
+        )
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Message not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post(

@@ -581,6 +581,31 @@ class OutputReviewFinding(BaseModel):
     label: str = ""
 
 
+class InputPiiEntity(BaseModel):
+    """PII entity type detected in a user message (display name only)."""
+    id: str
+    entity_name: str
+    kinds: List[str] = Field(
+        default_factory=list,
+        description="Human-readable PII match types found for this entity (e.g. hard/soft block)",
+    )
+
+
+class InputPiiConsentState(BaseModel):
+    status: Literal["pending", "denied", "allowed_all", "allowed_some"] = "pending"
+    entities: List[InputPiiEntity] = Field(default_factory=list)
+    requires_user_action: bool = False
+    user_message_id: int = 0
+
+
+class ChatInputPiiConsentRequest(BaseModel):
+    action: Literal["deny", "allow_all", "allow_some"]
+    allowed_pii_finding_ids: List[str] = Field(
+        default_factory=list,
+        description="Entity ids the user allows to remain in the message (allow_some only)",
+    )
+
+
 class OutputReviewState(BaseModel):
     status: Literal["none", "pending_review", "delivered"] = "none"
     requires_user_action: bool = False
@@ -719,6 +744,9 @@ class ChatMessageResponse(BaseModel):
     requires_clarification: bool = False
     clarification_questions: List[ClarificationQuestion] = Field(default_factory=list)
     identified_entities: List[str] = []
+    input_pii_consent: Optional[InputPiiConsentState] = None
+    requires_input_pii_consent: bool = False
+    input_pii_user_message_id: Optional[int] = None
     output_guardrail: Optional[OutputGuardrailResult] = None
     output_review: Optional[OutputReviewState] = None
     preview_content: Optional[str] = Field(
