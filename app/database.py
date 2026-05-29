@@ -69,6 +69,28 @@ async def init_db():
         # Import models to ensure they're registered with Base
         from . import models  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
+        await _apply_sqlite_migrations(conn)
+
+
+async def _apply_sqlite_migrations(conn):
+    """Lightweight column adds for existing SQLite dev databases."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    from sqlalchemy import text
+
+    def migrate(sync_conn):
+        rows = sync_conn.execute(text("PRAGMA table_info(chat_sessions)")).fetchall()
+        columns = {row[1] for row in rows}
+        if "security_threshold_preset" not in columns:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE chat_sessions "
+                    "ADD COLUMN security_threshold_preset VARCHAR(20) DEFAULT 'balanced'"
+                )
+            )
+
+    await conn.run_sync(migrate)
 
 
 async def close_db():

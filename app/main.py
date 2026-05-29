@@ -196,6 +196,8 @@ async def serve_deploy_code():
         "app/routes/logs.py",
         "app/routes/auth.py",
         "app/chat_storage.py",
+        "app/output_review.py",
+        "app/security_threshold.py",
         "app/engines/chat_service.py",
         "app/static/home.html",
         "app/static/index.html",

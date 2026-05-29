@@ -8,15 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..security_threshold import resolve_security_threshold
 from ..database import get_db
 from ..engines.chat_service import (
     get_session_for_user,
     list_session_messages,
     process_chat_message,
+    resolve_chat_message,
     _message_to_response,
 )
 from ..models import ChatMessage, ChatSession
 from ..schemas import (
+    ChatMessageResolveRequest,
     ChatMessageResponse,
     ChatSendMessageRequest,
     ChatSendMessageResponse,
@@ -41,6 +44,8 @@ async def _session_response(db: AsyncSession, session: ChatSession) -> ChatSessi
         region=session.region,
         guardrail_mode=session.guardrail_mode,
         output_guardrail_mode=session.output_guardrail_mode,
+        security_threshold_preset=session.security_threshold_preset,
+        security_threshold=resolve_security_threshold(session.security_threshold_preset),
         inference_provider=session.inference_provider,
         model=session.model,
         created_at=session.created_at,
@@ -61,6 +66,7 @@ async def create_session(
         region=body.region,
         guardrail_mode=body.guardrail_mode,
         output_guardrail_mode=body.output_guardrail_mode,
+        security_threshold_preset=body.security_threshold_preset,
         inference_provider=body.inference_provider,
         model=body.model,
     )
@@ -112,6 +118,7 @@ async def update_session(
     session.region = body.region
     session.guardrail_mode = body.guardrail_mode
     session.output_guardrail_mode = body.output_guardrail_mode
+    session.security_threshold_preset = body.security_threshold_preset
     session.inference_provider = body.inference_provider
     session.model = body.model
     if body.title is not None:
@@ -159,3 +166,28 @@ async def send_message(
     except PermissionError:
         raise HTTPException(status_code=404, detail="Session not found")
     return await process_chat_message(db, session, body.content, user["username"])
+
+
+@router.post(
+    "/chat/sessions/{session_id}/messages/{message_id}/resolve",
+    response_model=ChatMessageResponse,
+)
+async def resolve_message(
+    session_id: int,
+    message_id: int,
+    body: ChatMessageResolveRequest,
+    user=Depends(require_authenticated_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        session = await get_session_for_user(db, session_id, user["username"])
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        return await resolve_chat_message(
+            db, session, message_id, body, user["username"]
+        )
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Message not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

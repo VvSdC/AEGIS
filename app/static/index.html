@@ -129,6 +129,34 @@
                 </div>
 
                 <div class="chat-field">
+                    <label>Code security threshold</label>
+                    <p class="field-hint">How confident AEGIS must be before it asks you to regenerate code with security fixes. Higher = fewer prompts, but riskier code may slip through.</p>
+                    <div class="chat-radio-grid chat-threshold-grid">
+                        <label class="chat-radio-card">
+                            <input type="radio" name="security_threshold_preset" value="strict">
+                            Strict · 0.95<br><span class="text-slate-500 text-xs">Production code</span>
+                        </label>
+                        <label class="chat-radio-card">
+                            <input type="radio" name="security_threshold_preset" value="balanced" checked>
+                            Balanced · 0.90<br><span class="text-slate-500 text-xs">Default</span>
+                        </label>
+                        <label class="chat-radio-card">
+                            <input type="radio" name="security_threshold_preset" value="quiet">
+                            Quiet · 0.85<br><span class="text-slate-500 text-xs">POCs & drafts</span>
+                        </label>
+                    </div>
+                    <div class="chat-threshold-guide">
+                        <p class="chat-threshold-guide-title">When to use each level</p>
+                        <ul>
+                            <li><strong>Strict (0.95)</strong> — Production services, auth, payments, user data, anything shipped to customers. We only interrupt when we’re highly confident there’s a real vulnerability.</li>
+                            <li><strong>Balanced (0.90)</strong> — Everyday internal tools, scripts, and learning. Good default for most chats.</li>
+                            <li><strong>Quiet (0.85)</strong> — POCs, spikes, demos, and brainstorming. Fewer regen prompts; review code yourself before reuse.</li>
+                        </ul>
+                        <p class="chat-threshold-guide-note">Critical issues may still be flagged separately. PII in output always uses its own review flow (redact by default).</p>
+                    </div>
+                </div>
+
+                <div class="chat-field">
                     <label for="settings-provider">AI provider</label>
                     <p class="field-hint">Who runs the model (shown below the message box).</p>
                     <select id="settings-provider"></select>
@@ -163,6 +191,36 @@
         </div>
     </div>
 
+    <div class="chat-modal-backdrop" id="review-backdrop" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
+        <div class="chat-modal chat-modal-lg" id="review-modal">
+            <div class="chat-modal-header">
+                <div>
+                    <h2 id="review-modal-title">Review model response</h2>
+                    <p id="review-modal-desc">Check PII and code security before this response is delivered.</p>
+                </div>
+                <button type="button" class="chat-modal-close" id="close-review-btn" aria-label="Close">×</button>
+            </div>
+            <div class="chat-modal-body">
+                <div class="chat-review-preview" id="review-preview"></div>
+                <div id="review-pii-section" class="chat-review-section hidden">
+                    <h3>Personal data in output</h3>
+                    <p class="field-hint">Unchecked items will be redacted. Check only what may stay in the delivered response.</p>
+                    <div id="review-pii-list" class="chat-pii-checklist"></div>
+                </div>
+                <div id="review-code-section" class="chat-review-section hidden">
+                    <h3>Code security</h3>
+                    <p class="field-hint">Issues above your session threshold. Regenerate to ask the model to fix them, or accept if you understand the risk.</p>
+                    <ul id="review-code-list" class="chat-code-findings"></ul>
+                </div>
+            </div>
+            <div class="chat-modal-footer chat-review-footer">
+                <button type="button" id="review-redact-btn" class="btn-secondary text-sm hidden">Apply PII redaction</button>
+                <button type="button" id="review-regen-btn" class="btn-secondary text-sm hidden">Regenerate safely</button>
+                <button type="button" id="review-accept-btn" class="btn-primary text-sm">Accept & deliver</button>
+            </div>
+        </div>
+    </div>
+
     <script src="config.js"></script>
     <script>
         const API = CONFIG.BACKEND_URL;
@@ -170,6 +228,8 @@
         let pendingDeleteId = null;
         let inferenceOptions = [];
         let sending = false;
+
+        let pendingReviewMessageId = null;
 
         const els = {
             sessionList: document.getElementById('session-list'),
@@ -180,6 +240,7 @@
             composerForm: document.getElementById('composer-form'),
             settingsBackdrop: document.getElementById('settings-backdrop'),
             deleteBackdrop: document.getElementById('delete-backdrop'),
+            reviewBackdrop: document.getElementById('review-backdrop'),
             providerSelect: document.getElementById('settings-provider'),
             modelSelect: document.getElementById('settings-model'),
             composerMeta: document.getElementById('composer-meta'),
@@ -366,6 +427,9 @@
         }
 
         function renderOutputReview(msg) {
+            const review = msg.output_review;
+            if (review?.status === 'pending_review') return '';
+
             const og = msg.output_guardrail;
             if (!og) return '';
 
@@ -416,13 +480,125 @@
         function renderAssistantBubble(msg, { pipelineOpen = false } = {}) {
             const entities = (msg.identified_entities || []).map((e) =>
                 `<span class="chat-entity-pill">${escapeHtml(e)}</span>`).join('');
-            const pipeline = renderPipeline(msg.pipeline, { open: pipelineOpen });
-            const body = msg.content
-                ? `<div class="chat-bubble-text">${formatMessageContent(msg.content)}</div>`
-                : '';
+            const pipeline = renderPipeline(msg.pipeline, { pipelineOpen });
+            const review = msg.output_review;
+            const pending = review?.status === 'pending_review' && review?.requires_user_action;
+            let body = '';
+            if (pending) {
+                body = `<div class="chat-review-pending" data-message-id="${msg.id}">
+                    <p class="chat-review-pending-title">Response held for your review</p>
+                    <p class="chat-review-pending-desc">PII or code security findings need your decision before delivery.</p>
+                    <button type="button" class="btn-secondary text-sm chat-open-review-btn" data-message-id="${msg.id}">Review response</button>
+                </div>`;
+            } else if (msg.content) {
+                body = `<div class="chat-bubble-text">${formatMessageContent(msg.content)}</div>`;
+            }
             const outputReview = renderOutputReview(msg);
             const entitiesHtml = entities ? `<div class="chat-entities">${entities}</div>` : '';
-            return `<div class="chat-row assistant"><div class="chat-bubble assistant">${pipeline}${body}${outputReview}${entitiesHtml}</div></div>`;
+            return `<div class="chat-row assistant" data-message-id="${msg.id}"><div class="chat-bubble assistant">${pipeline}${body}${outputReview}${entitiesHtml}</div></div>`;
+        }
+
+        function getSelectedPiiIds() {
+            return [...document.querySelectorAll('#review-pii-list input[type="checkbox"]:checked')]
+                .map((cb) => cb.value);
+        }
+
+        function populateReviewModal(msg) {
+            pendingReviewMessageId = msg.id;
+            const review = msg.output_review;
+            const preview = msg.preview_content || msg.content || '';
+            document.getElementById('review-preview').innerHTML = formatMessageContent(preview);
+
+            const piiSection = document.getElementById('review-pii-section');
+            const codeSection = document.getElementById('review-code-section');
+            const piiList = document.getElementById('review-pii-list');
+            const codeList = document.getElementById('review-code-list');
+            const piiFindings = (review?.findings || []).filter((f) => f.category === 'pii');
+            const codeFindings = (review?.findings || []).filter((f) => f.category === 'insecure_code');
+
+            if (piiFindings.length) {
+                piiSection.classList.remove('hidden');
+                piiList.innerHTML = piiFindings.map((f) => `
+                    <label class="chat-pii-check">
+                        <input type="checkbox" value="${escapeHtml(f.id)}">
+                        <span><strong>${escapeHtml(f.label || 'PII')}</strong> — keep in output</span>
+                        <span class="chat-pii-sample">${escapeHtml(f.matched_text || '')}</span>
+                    </label>`).join('');
+            } else {
+                piiSection.classList.add('hidden');
+                piiList.innerHTML = '';
+            }
+
+            if (codeFindings.length && review?.trigger_reasons?.includes('insecure_code')) {
+                codeSection.classList.remove('hidden');
+                codeList.innerHTML = codeFindings.map((f) =>
+                    `<li><strong>${escapeHtml(f.severity)}</strong> (${(f.confidence * 100).toFixed(0)}%) — ${escapeHtml(f.description)}</li>`
+                ).join('');
+            } else {
+                codeSection.classList.add('hidden');
+                codeList.innerHTML = '';
+            }
+
+            document.getElementById('review-redact-btn').classList.toggle('hidden', !piiFindings.length);
+            document.getElementById('review-regen-btn').classList.toggle('hidden', !review?.code_regen_available);
+            document.getElementById('review-regen-btn').textContent = review?.regenerations_remaining != null
+                ? `Regenerate safely (${review.regenerations_remaining} left)`
+                : 'Regenerate safely';
+
+            const desc = [];
+            if (piiFindings.length) desc.push('PII detected');
+            if (review?.trigger_reasons?.includes('insecure_code')) desc.push('code security review required');
+            document.getElementById('review-modal-desc').textContent = desc.length
+                ? `${desc.join(' · ')} — choose how to deliver this response.`
+                : 'Review this response before delivery.';
+        }
+
+        function openReviewModal(msg) {
+            populateReviewModal(msg);
+            els.reviewBackdrop.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeReviewModal() {
+            pendingReviewMessageId = null;
+            els.reviewBackdrop.classList.remove('open');
+            if (!els.settingsBackdrop.classList.contains('open') && !els.deleteBackdrop.classList.contains('open')) {
+                document.body.style.overflow = '';
+            }
+        }
+
+        function replaceAssistantMessage(msg) {
+            const row = document.querySelector(`.chat-row.assistant[data-message-id="${msg.id}"]`);
+            if (row) {
+                row.outerHTML = renderAssistantBubble(msg, { pipelineOpen: !msg.allow });
+            }
+        }
+
+        async function resolveReview(action) {
+            if (!pendingReviewMessageId || !currentSessionId) return;
+            setAppLoading(true, action === 'regenerate' ? 'Regenerating response…' : 'Applying review…');
+            try {
+                const updated = await api(
+                    `/chat/sessions/${currentSessionId}/messages/${pendingReviewMessageId}/resolve`,
+                    {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action,
+                            allowed_pii_finding_ids: getSelectedPiiIds(),
+                        }),
+                    },
+                );
+                replaceAssistantMessage(updated);
+                if (updated.output_review?.requires_user_action) {
+                    openReviewModal(updated);
+                } else {
+                    closeReviewModal();
+                }
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                setAppLoading(false);
+            }
         }
 
         function renderMessages(messages) {
@@ -510,7 +686,7 @@
         function closeDeleteModal() {
             pendingDeleteId = null;
             els.deleteBackdrop.classList.remove('open');
-            if (!els.settingsBackdrop.classList.contains('open')) {
+            if (!els.settingsBackdrop.classList.contains('open') && !els.reviewBackdrop.classList.contains('open')) {
                 document.body.style.overflow = '';
             }
         }
@@ -584,6 +760,7 @@
                 region: document.getElementById('settings-region').value,
                 guardrail_mode: document.querySelector('input[name="guardrail_mode"]:checked').value,
                 output_guardrail_mode: document.getElementById('settings-output').value,
+                security_threshold_preset: document.querySelector('input[name="security_threshold_preset"]:checked').value,
                 inference_provider: els.providerSelect.value,
                 model: els.modelSelect.value,
             };
@@ -594,6 +771,9 @@
             const gr = document.querySelector(`input[name="guardrail_mode"][value="${session.guardrail_mode}"]`);
             if (gr) gr.checked = true;
             document.getElementById('settings-output').value = session.output_guardrail_mode;
+            const preset = session.security_threshold_preset || 'balanced';
+            const th = document.querySelector(`input[name="security_threshold_preset"][value="${preset}"]`);
+            if (th) th.checked = true;
             if (session.inference_provider) els.providerSelect.value = session.inference_provider;
             updateModelOptions();
             if (session.model) els.modelSelect.value = session.model;
@@ -618,7 +798,7 @@
 
         function closeSettings() {
             els.settingsBackdrop.classList.remove('open');
-            if (!els.deleteBackdrop.classList.contains('open')) {
+            if (!els.deleteBackdrop.classList.contains('open') && !els.reviewBackdrop.classList.contains('open')) {
                 document.body.style.overflow = '';
             }
         }
@@ -675,6 +855,9 @@
                 if (lastUser) lastUser.outerHTML = renderUserBubble(res.user_message, text);
                 els.messagesInner.insertAdjacentHTML('beforeend',
                     renderAssistantBubble(res.assistant_message, { pipelineOpen: !res.assistant_message.allow }));
+                if (res.assistant_message.output_review?.requires_user_action) {
+                    openReviewModal(res.assistant_message);
+                }
                 await loadSessions();
             } catch (err) {
                 document.getElementById('pending-assistant')?.remove();
@@ -693,6 +876,15 @@
         }
 
         els.messagesInner.addEventListener('click', (e) => {
+            const reviewBtn = e.target.closest('.chat-open-review-btn');
+            if (reviewBtn) {
+                const id = Number(reviewBtn.dataset.messageId);
+                api(`/chat/sessions/${currentSessionId}/messages`).then((messages) => {
+                    const msg = messages.find((m) => m.id === id);
+                    if (msg) openReviewModal(msg);
+                }).catch((err) => alert(err.message));
+                return;
+            }
             const btn = e.target.closest('.code-copy-btn');
             if (!btn) return;
             const code = btn.closest('.chat-code-block')?.querySelector('code');
@@ -758,9 +950,19 @@
         });
         document.getElementById('delete-modal').addEventListener('click', (e) => e.stopPropagation());
 
+        document.getElementById('close-review-btn').addEventListener('click', closeReviewModal);
+        document.getElementById('review-accept-btn').addEventListener('click', () => resolveReview('accept'));
+        document.getElementById('review-redact-btn').addEventListener('click', () => resolveReview('apply_pii_redaction'));
+        document.getElementById('review-regen-btn').addEventListener('click', () => resolveReview('regenerate'));
+        els.reviewBackdrop.addEventListener('click', (e) => {
+            if (e.target === els.reviewBackdrop) closeReviewModal();
+        });
+        document.getElementById('review-modal').addEventListener('click', (e) => e.stopPropagation());
+
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape') return;
-            if (els.deleteBackdrop.classList.contains('open')) closeDeleteModal();
+            if (els.reviewBackdrop.classList.contains('open')) closeReviewModal();
+            else if (els.deleteBackdrop.classList.contains('open')) closeDeleteModal();
             else if (els.settingsBackdrop.classList.contains('open')) closeSettings();
         });
 

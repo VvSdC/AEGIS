@@ -571,6 +571,31 @@ class OutputGuardrailResult(BaseModel):
     summary: str = "Output passed all checks."
 
 
+class OutputReviewFinding(BaseModel):
+    id: str
+    category: str
+    severity: str
+    description: str
+    matched_text: Optional[str] = None
+    confidence: float = 0.0
+    label: str = ""
+
+
+class OutputReviewState(BaseModel):
+    status: Literal["none", "pending_review", "delivered"] = "none"
+    requires_user_action: bool = False
+    trigger_reasons: List[str] = Field(default_factory=list)
+    max_code_confidence: Optional[float] = None
+    security_threshold: float = 0.90
+    code_regen_available: bool = False
+    regenerations_remaining: int = 2
+    regenerations_used: int = 0
+    findings: List[OutputReviewFinding] = Field(default_factory=list)
+    allowed_actions: List[str] = Field(default_factory=list)
+    has_pii_findings: bool = False
+    has_code_findings: bool = False
+
+
 class AnalyzeResponse(BaseModel):
     """Final structured response from two-tier analysis."""
     allow: bool
@@ -592,6 +617,10 @@ class ChatSessionSettings(BaseModel):
     region: Literal["india", "china", "europe", "usa", "australia"] = "india"
     guardrail_mode: Literal["basic", "advanced"] = "basic"
     output_guardrail_mode: Literal["none", "tier1", "tier2"] = "tier1"
+    security_threshold_preset: Literal["strict", "balanced", "quiet"] = Field(
+        default="balanced",
+        description="When insecure code is found in model output, prompt regen if confidence >= this preset's value",
+    )
     inference_provider: Literal["gemini", "openrouter", "huggingface", "mistral"] = "gemini"
     model: str = "gemini-2.0-flash"
 
@@ -610,6 +639,8 @@ class ChatSessionResponse(BaseModel):
     region: str
     guardrail_mode: str
     output_guardrail_mode: str
+    security_threshold_preset: str = "balanced"
+    security_threshold: float = 0.90
     inference_provider: str
     model: str
     created_at: datetime
@@ -634,10 +665,23 @@ class ChatMessageResponse(BaseModel):
     pipeline: List[PipelineStepState] = []
     identified_entities: List[str] = []
     output_guardrail: Optional[OutputGuardrailResult] = None
+    output_review: Optional[OutputReviewState] = None
+    preview_content: Optional[str] = Field(
+        default=None,
+        description="Raw model output shown only while review is pending",
+    )
     created_at: datetime
     ephemeral_display: Optional[str] = Field(
         default=None,
         description="One-time UI text for withheld user messages (not stored server-side)",
+    )
+
+
+class ChatMessageResolveRequest(BaseModel):
+    action: Literal["accept", "regenerate", "apply_pii_redaction"]
+    allowed_pii_finding_ids: List[str] = Field(
+        default_factory=list,
+        description="PII finding ids the user allows to remain; others are redacted",
     )
 
 

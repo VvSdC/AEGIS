@@ -9,6 +9,14 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..output_review import (
+    MAX_REGENERATIONS,
+    apply_pii_redaction,
+    build_regeneration_instruction,
+    collect_recommendations,
+    evaluate_output_review,
+)
+from ..security_threshold import resolve_security_threshold
 from ..chat_storage import resolve_user_storage
 from ..models import ChatMessage, ChatSession
 from ..schemas import (
@@ -18,6 +26,8 @@ from ..schemas import (
     OutputGuardrailResult,
     OutputTier1Result,
     OutputTier2Result,
+    OutputReviewState,
+    ChatMessageResolveRequest,
     PipelineStepState,
     Tier1Result,
     Tier2Result,
@@ -123,6 +133,57 @@ def build_pipeline_steps(
     ]
 
 
+def _assessment_to_output_guardrail(output_assessment: dict, session_region: str) -> OutputGuardrailResult:
+    tier1_data = output_assessment.get("tier1")
+    tier2_data = output_assessment.get("tier2")
+    output_tier1 = None
+    if tier1_data:
+        output_tier1 = OutputTier1Result(
+            findings=[OutputFinding(**f) for f in tier1_data.get("findings", [])],
+            has_warnings=tier1_data.get("has_warnings", False),
+            warning_summary=tier1_data.get("warning_summary"),
+            latency_ms=tier1_data.get("latency_ms", 0),
+        )
+    output_tier2 = None
+    if tier2_data:
+        output_tier2 = OutputTier2Result(
+            compliant=tier2_data.get("compliant", True),
+            safety_score=tier2_data.get("safety_score", 1.0),
+            compliance_findings=[
+                OutputFinding(**f) for f in tier2_data.get("compliance_findings", [])
+            ],
+            region=tier2_data.get("region", session_region),
+            policies_checked=tier2_data.get("policies_checked", []),
+            assessment=tier2_data.get("assessment", ""),
+            recommendations=tier2_data.get("recommendations", []),
+            latency_ms=tier2_data.get("latency_ms", 0),
+        )
+    return OutputGuardrailResult(
+        tier1=output_tier1,
+        tier2=output_tier2,
+        safe_to_use=output_assessment.get("safe_to_use", True),
+        action_required=output_assessment.get("action_required", False),
+        summary=output_assessment.get("summary", "Output passed all checks."),
+    )
+
+
+async def _assess_model_output(
+    guardrail_engine,
+    user_text: str,
+    assistant_text: str,
+    session: ChatSession,
+) -> Optional[OutputGuardrailResult]:
+    if session.output_guardrail_mode == "none":
+        return None
+    output_assessment = await guardrail_engine.assess_output(
+        original_prompt=user_text,
+        response_text=assistant_text,
+        region=session.region,
+        tier=session.output_guardrail_mode,
+    )
+    return _assessment_to_output_guardrail(output_assessment, session.region)
+
+
 def _message_to_response(msg: ChatMessage, ephemeral: Optional[str] = None) -> ChatMessageResponse:
     meta = msg.meta or {}
     pipeline = [PipelineStepState(**s) for s in (msg.pipeline or [])]
@@ -130,15 +191,28 @@ def _message_to_response(msg: ChatMessage, ephemeral: Optional[str] = None) -> C
     og_raw = meta.get("output_guardrail")
     if og_raw:
         output_guardrail = OutputGuardrailResult(**og_raw)
+    output_review = None
+    rv_raw = meta.get("output_review")
+    if rv_raw:
+        output_review = OutputReviewState(**rv_raw)
+
+    content = msg.content
+    preview_content = None
+    if meta.get("review_status") == "pending_review" and msg.role == "assistant":
+        preview_content = meta.get("raw_content") or msg.content
+        content = None
+
     return ChatMessageResponse(
         id=msg.id,
         role=msg.role,
-        content=msg.content,
+        content=content,
         storage_mode=msg.storage_mode,
         allow=msg.allow,
         pipeline=pipeline,
         identified_entities=meta.get("identified_entities", []),
         output_guardrail=output_guardrail,
+        output_review=output_review,
+        preview_content=preview_content,
         created_at=msg.created_at,
         ephemeral_display=ephemeral,
     )
@@ -171,6 +245,9 @@ def _history_for_inference(messages: List[ChatMessage]) -> List[Dict[str, str]]:
         if msg.role == "user":
             history.append({"role": "user", "content": msg.content})
         elif msg.role == "assistant" and msg.allow:
+            meta = msg.meta or {}
+            if meta.get("review_status") == "pending_review":
+                continue
             history.append({"role": "assistant", "content": msg.content})
     return history
 
@@ -314,42 +391,8 @@ async def process_chat_message(
                 assistant_text = f"Model failed to respond: {exc}"
 
             if allow and session.output_guardrail_mode != "none":
-                output_assessment = await guardrail_engine.assess_output(
-                    original_prompt=user_text,
-                    response_text=assistant_text,
-                    region=session.region,
-                    tier=session.output_guardrail_mode,
-                )
-                tier1_data = output_assessment.get("tier1")
-                tier2_data = output_assessment.get("tier2")
-                output_tier1 = None
-                if tier1_data:
-                    output_tier1 = OutputTier1Result(
-                        findings=[OutputFinding(**f) for f in tier1_data.get("findings", [])],
-                        has_warnings=tier1_data.get("has_warnings", False),
-                        warning_summary=tier1_data.get("warning_summary"),
-                        latency_ms=tier1_data.get("latency_ms", 0),
-                    )
-                output_tier2 = None
-                if tier2_data:
-                    output_tier2 = OutputTier2Result(
-                        compliant=tier2_data.get("compliant", True),
-                        safety_score=tier2_data.get("safety_score", 1.0),
-                        compliance_findings=[
-                            OutputFinding(**f) for f in tier2_data.get("compliance_findings", [])
-                        ],
-                        region=tier2_data.get("region", session.region),
-                        policies_checked=tier2_data.get("policies_checked", []),
-                        assessment=tier2_data.get("assessment", ""),
-                        recommendations=tier2_data.get("recommendations", []),
-                        latency_ms=tier2_data.get("latency_ms", 0),
-                    )
-                output_guardrail_result = OutputGuardrailResult(
-                    tier1=output_tier1,
-                    tier2=output_tier2,
-                    safe_to_use=output_assessment.get("safe_to_use", True),
-                    action_required=output_assessment.get("action_required", False),
-                    summary=output_assessment.get("summary", "Output passed all checks."),
+                output_guardrail_result = await _assess_model_output(
+                    guardrail_engine, user_text, assistant_text, session
                 )
 
             pipeline = build_pipeline_steps(
@@ -379,10 +422,27 @@ async def process_chat_message(
     if output_guardrail_result is not None:
         assistant_meta["output_guardrail"] = output_guardrail_result.model_dump()
 
+    if allow and output_guardrail_result is not None:
+        threshold = resolve_security_threshold(session.security_threshold_preset)
+        review_state, _ = evaluate_output_review(
+            assistant_text,
+            output_guardrail_result,
+            threshold,
+            session.region,
+            regenerations_used=0,
+        )
+        assistant_meta["output_review"] = review_state.model_dump()
+        assistant_meta["raw_content"] = assistant_text
+        assistant_meta["regenerations_used"] = 0
+        assistant_meta["review_status"] = review_state.status
+        assistant_meta["source_user_prompt"] = user_text
+    elif allow:
+        assistant_meta["review_status"] = "delivered"
+
     assistant_msg = ChatMessage(
         session_id=session.id,
         role="assistant",
-        content=assistant_text if allow or not allow else assistant_text,
+        content=assistant_text,
         storage_mode="full",
         allow=allow,
         pipeline=[s.model_dump() for s in pipeline],
@@ -396,8 +456,189 @@ async def process_chat_message(
 
     await db.flush()
 
+    if allow and assistant_meta.get("review_status") == "pending_review":
+        await audit.log(
+            db=db,
+            event_type="chat_output_review_required",
+            actor=username,
+            system_name="aegis-chat",
+            details={
+                "session_id": session.id,
+                "message_id": assistant_msg.id,
+                "trigger_reasons": assistant_meta.get("output_review", {}).get("trigger_reasons", []),
+                "security_threshold": resolve_security_threshold(session.security_threshold_preset),
+            },
+        )
+
     return ChatSendMessageResponse(
         session_id=session.id,
         user_message=_message_to_response(user_msg, ephemeral=ephemeral_user),
         assistant_message=_message_to_response(assistant_msg),
     )
+
+
+async def get_message_for_user(
+    db: AsyncSession,
+    session_id: int,
+    message_id: int,
+    username: str,
+) -> ChatMessage:
+    await get_session_for_user(db, session_id, username)
+    result = await db.execute(
+        select(ChatMessage).where(
+            ChatMessage.id == message_id,
+            ChatMessage.session_id == session_id,
+        )
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise PermissionError("Message not found")
+    return msg
+
+
+async def _finalize_review_state(
+    msg: ChatMessage,
+    session: ChatSession,
+    text: str,
+    user_text: str,
+    guardrail_engine,
+    regenerations_used: int,
+) -> None:
+    meta = msg.meta or {}
+    threshold = resolve_security_threshold(session.security_threshold_preset)
+    output_guardrail_result = await _assess_model_output(
+        guardrail_engine, user_text, text, session
+    )
+    if output_guardrail_result:
+        meta["output_guardrail"] = output_guardrail_result.model_dump()
+    review_state, _ = evaluate_output_review(
+        text,
+        output_guardrail_result,
+        threshold,
+        session.region,
+        regenerations_used=regenerations_used,
+    )
+    meta["output_review"] = review_state.model_dump()
+    meta["raw_content"] = text
+    meta["regenerations_used"] = regenerations_used
+    meta["review_status"] = review_state.status
+    msg.meta = meta
+    msg.content = text if review_state.status == "delivered" else text
+
+
+async def resolve_chat_message(
+    db: AsyncSession,
+    session: ChatSession,
+    message_id: int,
+    body: ChatMessageResolveRequest,
+    username: str,
+) -> ChatMessageResponse:
+    msg = await get_message_for_user(db, session.id, message_id, username)
+    if msg.role != "assistant":
+        raise ValueError("Only assistant messages can be resolved")
+
+    meta = dict(msg.meta or {})
+    if meta.get("review_status") != "pending_review":
+        raise ValueError("Message is not pending review")
+
+    review = OutputReviewState(**meta["output_review"])
+    raw = meta.get("raw_content") or msg.content or ""
+    findings = review.findings
+    allowed = set(body.allowed_pii_finding_ids)
+    guardrail_engine = get_guardrail_engine()
+    audit = get_audit_vault()
+    user_text = meta.get("source_user_prompt", "")
+    threshold = review.security_threshold
+    regen_used = int(meta.get("regenerations_used", 0))
+
+    og_raw = meta.get("output_guardrail")
+    og = OutputGuardrailResult(**og_raw) if og_raw else None
+
+    async def _audit(event_type: str, extra: dict):
+        await audit.log(
+            db=db,
+            event_type=event_type,
+            actor=username,
+            system_name="aegis-chat",
+            details={
+                "session_id": session.id,
+                "message_id": msg.id,
+                "action": body.action,
+                "region": session.region,
+                **extra,
+            },
+        )
+
+    if body.action == "accept":
+        text = apply_pii_redaction(raw, findings, allowed)
+        meta["review_status"] = "delivered"
+        review.status = "delivered"
+        review.requires_user_action = False
+        meta["output_review"] = review.model_dump()
+        meta["raw_content"] = text
+        msg.content = text
+        msg.meta = meta
+        await _audit(
+            "chat_output_accepted",
+            {
+                "allowed_pii_ids": list(allowed),
+                "max_code_confidence": review.max_code_confidence,
+            },
+        )
+
+    elif body.action == "apply_pii_redaction":
+        text = apply_pii_redaction(raw, findings, allowed)
+        await _finalize_review_state(
+            msg, session, text, user_text, guardrail_engine, regen_used
+        )
+        await _audit(
+            "chat_output_pii_redacted",
+            {"allowed_pii_ids": list(allowed), "review_status": msg.meta.get("review_status")},
+        )
+
+    elif body.action == "regenerate":
+        if regen_used >= MAX_REGENERATIONS:
+            raise ValueError("No regenerations remaining")
+        if "regenerate" not in review.allowed_actions:
+            raise ValueError("Regeneration is not available for this message")
+
+        code_findings = [f for f in findings if f.category == "insecure_code"]
+        instruction = build_regeneration_instruction(
+            code_findings,
+            collect_recommendations(og),
+        )
+
+        prior = await list_session_messages(db, session.id)
+        prior = [m for m in prior if m.id < msg.id]
+        history = _history_for_inference(prior)
+        history.append({"role": "assistant", "content": raw})
+        history.append({"role": "user", "content": instruction})
+
+        await refresh_gemini_catalog()
+        await refresh_mistral_catalog()
+        inference = get_inference_router()
+        compliance_header = build_compliance_header(session.region)
+        new_text = await inference.generate_messages(
+            session.inference_provider,
+            session.model,
+            history,
+            compliance_header=compliance_header,
+        )
+
+        regen_used += 1
+        await _finalize_review_state(
+            msg, session, new_text, user_text, guardrail_engine, regen_used
+        )
+        await _audit(
+            "chat_output_regenerated",
+            {
+                "regenerations_used": regen_used,
+                "review_status": msg.meta.get("review_status"),
+            },
+        )
+    else:
+        raise ValueError(f"Unknown action: {body.action}")
+
+    session.updated_at = datetime.utcnow()
+    await db.flush()
+    return _message_to_response(msg)
